@@ -5,9 +5,10 @@ export function getActiveTenantId(): string | null {
   return window.localStorage.getItem(ACTIVE_TENANT_KEY);
 }
 
-export function setActiveTenantId(tenantId: string): void {
-  if (typeof window === "undefined") return;
+export function setActiveTenantId(tenantId: string): string | null {
+  if (typeof window === "undefined") return null;
   window.localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
+  return tenantId;
 }
 
 export function clearActiveTenantId(): void {
