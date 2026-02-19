@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../../src/lib/auth/useSession";
@@ -9,7 +9,6 @@ import { setActiveTenantId } from "../../../src/lib/tenancy/activeTenant";
 
 export function OnboardingClient() {
   const router = useRouter();
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const { session, isLoading } = useSession();
   const [statusMessage, setStatusMessage] = useState("Preparando onboarding...");
   const [errorMessage, setErrorMessage] = useState("");
@@ -20,6 +19,7 @@ export function OnboardingClient() {
     hasStartedRef.current = true;
 
     const run = async () => {
+      const supabase = createBrowserSupabaseClient();
       const userId = session.user.id;
       setErrorMessage("");
       setStatusMessage("Verificando tenant...");
@@ -75,7 +75,7 @@ export function OnboardingClient() {
     run().catch((error) => {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     });
-  }, [isLoading, router, session, supabase]);
+  }, [isLoading, router, session]);
 
   if (isLoading) {
     return <p>Carregando sessão...</p>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -13,7 +13,6 @@ type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
 
 export function DashboardClient() {
   const router = useRouter();
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const { session, isLoading } = useSession();
   const [activeTenantId, setActiveTenantIdState] = useState<string | null>(null);
   const [tenantName, setTenantName] = useState<string>("");
@@ -45,6 +44,7 @@ export function DashboardClient() {
     if (!session || !activeTenantId) return;
 
     const load = async () => {
+      const supabase = createBrowserSupabaseClient();
       setLoadError("");
       setIsLoadingData(true);
 
@@ -87,7 +87,7 @@ export function DashboardClient() {
       setLoadError(error instanceof Error ? error.message : String(error));
       setIsLoadingData(false);
     });
-  }, [activeTenantId, router, session, supabase]);
+  }, [activeTenantId, router, session]);
 
   async function handleCreateCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,6 +104,7 @@ export function DashboardClient() {
     }
 
     setIsCreatingCompany(true);
+    const supabase = createBrowserSupabaseClient();
     const { error } = await supabase.from("companies").insert({
       tenant_id: activeTenantId,
       legal_name: legalName.trim(),

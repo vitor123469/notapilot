@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -10,7 +10,6 @@ import { createBrowserSupabaseClient } from "../../lib/supabase/browserClient";
 
 export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const { session, isLoading } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
@@ -24,6 +23,7 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
   async function handleSignOut() {
     setSignOutError("");
     setIsSigningOut(true);
+    const supabase = createBrowserSupabaseClient();
     const { error } = await supabase.auth.signOut();
     setIsSigningOut(false);
 

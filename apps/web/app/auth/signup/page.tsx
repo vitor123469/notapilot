@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -9,7 +9,6 @@ import { createBrowserSupabaseClient } from "../../../src/lib/supabase/browserCl
 
 export default function SignupPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const { session, isLoading: isLoadingSession } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,6 +36,7 @@ export default function SignupPage() {
     }
 
     setIsSubmitting(true);
+    const supabase = createBrowserSupabaseClient();
 
     const normalizedEmail = email.trim();
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
