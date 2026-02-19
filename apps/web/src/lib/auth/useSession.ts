@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 
-import { createBrowserSupabaseClient } from "../supabase/browserClient";
+import { getBrowserSupabaseClient } from "../supabase/browserClient";
 
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
@@ -12,7 +12,7 @@ export function useSession() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const supabase = createBrowserSupabaseClient();
+    const supabase = getBrowserSupabaseClient();
     let isMounted = true;
 
     supabase.auth.getSession().then(({ data, error }) => {
