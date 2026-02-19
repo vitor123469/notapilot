@@ -1,8 +1,16 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "./db.types";
 
-export function createBrowserSupabaseClient() {
+declare global {
+  var __notapilotBrowserSupabaseClient__: SupabaseClient<Database> | undefined;
+}
+
+export function getBrowserSupabaseClient(): SupabaseClient<Database> {
+  if (globalThis.__notapilotBrowserSupabaseClient__) {
+    return globalThis.__notapilotBrowserSupabaseClient__;
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -13,5 +21,18 @@ export function createBrowserSupabaseClient() {
     throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY não definida.");
   }
 
-  return createClient<Database>(supabaseUrl, supabaseAnonKey);
+  globalThis.__notapilotBrowserSupabaseClient__ = createClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: "notapilot-auth",
+      },
+    }
+  );
+
+  return globalThis.__notapilotBrowserSupabaseClient__;
 }

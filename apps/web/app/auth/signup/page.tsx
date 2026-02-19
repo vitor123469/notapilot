@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../../src/lib/auth/useSession";
-import { createBrowserSupabaseClient } from "../../../src/lib/supabase/browserClient";
+import { getBrowserSupabaseClient } from "../../../src/lib/supabase/browserClient";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -36,7 +36,7 @@ export default function SignupPage() {
     }
 
     setIsSubmitting(true);
-    const supabase = createBrowserSupabaseClient();
+    const supabase = getBrowserSupabaseClient();
 
     const normalizedEmail = email.trim();
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({

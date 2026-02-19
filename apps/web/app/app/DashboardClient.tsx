@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { useSession } from "../../src/lib/auth/useSession";
 import type { Database } from "../../src/lib/supabase/db.types";
-import { createBrowserSupabaseClient } from "../../src/lib/supabase/browserClient";
+import { getBrowserSupabaseClient } from "../../src/lib/supabase/browserClient";
 import { getActiveTenantId } from "../../src/lib/tenancy/activeTenant";
 
 type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
@@ -44,7 +44,7 @@ export function DashboardClient() {
     if (!session || !activeTenantId) return;
 
     const load = async () => {
-      const supabase = createBrowserSupabaseClient();
+      const supabase = getBrowserSupabaseClient();
       setLoadError("");
       setIsLoadingData(true);
 
@@ -104,7 +104,7 @@ export function DashboardClient() {
     }
 
     setIsCreatingCompany(true);
-    const supabase = createBrowserSupabaseClient();
+    const supabase = getBrowserSupabaseClient();
     const { error } = await supabase.from("companies").insert({
       tenant_id: activeTenantId,
       legal_name: legalName.trim(),

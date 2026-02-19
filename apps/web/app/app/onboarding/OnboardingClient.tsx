@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../../src/lib/auth/useSession";
-import { createBrowserSupabaseClient } from "../../../src/lib/supabase/browserClient";
+import { getBrowserSupabaseClient } from "../../../src/lib/supabase/browserClient";
 import { setActiveTenantId } from "../../../src/lib/tenancy/activeTenant";
 
 export function OnboardingClient() {
@@ -19,10 +19,21 @@ export function OnboardingClient() {
     hasStartedRef.current = true;
 
     const run = async () => {
-      const supabase = createBrowserSupabaseClient();
-      const userId = session.user.id;
+      const supabase = getBrowserSupabaseClient();
       setErrorMessage("");
       setStatusMessage("Verificando tenant...");
+
+      const {
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser();
+      if (getUserError || !user) {
+        setErrorMessage(getUserError?.message ?? "Sessão inválida. Faça login novamente.");
+        router.replace("/auth/login");
+        return;
+      }
+
+      const userId = user.id;
 
       const { data: existingMember, error: memberCheckError } = await supabase
         .from("tenant_members")
