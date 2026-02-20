@@ -3,12 +3,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./db.types";
 
 declare global {
-  var __notapilotBrowserSupabaseClient__: SupabaseClient<Database> | undefined;
+  var __notapilotSupabaseBrowser__: SupabaseClient<Database> | undefined;
 }
 
-export function getBrowserSupabaseClient(): SupabaseClient<Database> {
-  if (globalThis.__notapilotBrowserSupabaseClient__) {
-    return globalThis.__notapilotBrowserSupabaseClient__;
+export function getSupabaseBrowser(): SupabaseClient<Database> {
+  if (globalThis.__notapilotSupabaseBrowser__) {
+    return globalThis.__notapilotSupabaseBrowser__;
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,7 +21,7 @@ export function getBrowserSupabaseClient(): SupabaseClient<Database> {
     throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY não definida.");
   }
 
-  globalThis.__notapilotBrowserSupabaseClient__ = createClient<Database>(
+  globalThis.__notapilotSupabaseBrowser__ = createClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -34,5 +34,5 @@ export function getBrowserSupabaseClient(): SupabaseClient<Database> {
     }
   );
 
-  return globalThis.__notapilotBrowserSupabaseClient__;
+  return globalThis.__notapilotSupabaseBrowser__;
 }

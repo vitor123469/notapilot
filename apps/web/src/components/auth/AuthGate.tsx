@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { useSession } from "../../lib/auth/useSession";
 import { clearActiveTenantId } from "../../lib/tenancy/activeTenant";
-import { getBrowserSupabaseClient } from "../../lib/supabase/browserClient";
+import { getSupabaseBrowser } from "../../lib/supabase/browserClient";
 
 export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
@@ -23,7 +23,7 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
   async function handleSignOut() {
     setSignOutError("");
     setIsSigningOut(true);
-    const supabase = getBrowserSupabaseClient();
+    const supabase = getSupabaseBrowser();
     const { error } = await supabase.auth.signOut();
     setIsSigningOut(false);
 
