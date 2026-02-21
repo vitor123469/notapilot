@@ -158,7 +158,16 @@ export function CompaniesClient() {
     setDeletingCompanyId(null);
 
     if (error) {
-      setDeleteError("Não foi possível excluir company. Tente recarregar.");
+      const errorMessage = error.message || "Erro desconhecido ao excluir company.";
+      const lower = errorMessage.toLowerCase();
+      if (lower.includes("foreign key") || lower.includes("violates foreign key constraint")) {
+        setDeleteError(
+          `Não é possível excluir: existem notas emitidas ou dados vinculados. Exclua as notas primeiro. (${errorMessage})`
+        );
+        return;
+      }
+
+      setDeleteError(`Falha ao excluir company: ${errorMessage}`);
       return;
     }
 

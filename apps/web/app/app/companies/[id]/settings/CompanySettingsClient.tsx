@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../../../../src/lib/auth/useSession";
@@ -207,7 +206,9 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
 
     setIsSaving(false);
     setSaveMessage("Salvo.");
-    await loadData();
+    setTimeout(() => {
+      router.push("/app/companies");
+    }, 500);
   }
 
   const checklist = useMemo(() => {
@@ -256,7 +257,9 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
     <main style={{ display: "grid", gap: 20 }}>
       <header style={{ display: "grid", gap: 4 }}>
         <h1>Config Fiscal</h1>
-        <Link href="/app/companies">Voltar para empresas</Link>
+        <button type="button" onClick={() => router.push("/app/companies")} style={{ width: "fit-content" }}>
+          Voltar
+        </button>
         {company ? <p style={{ margin: 0 }}>Empresa: {company.legal_name}</p> : null}
         <span
           style={{
@@ -276,7 +279,16 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
       {loadError ? <p style={{ color: "crimson", margin: 0 }}>{loadError}</p> : null}
 
       {!isLoadingData && !loadError ? (
-        <>
+        <div
+          style={{
+            border: "1px solid #ddd",
+            padding: 16,
+            borderRadius: 12,
+            maxWidth: 900,
+            display: "grid",
+            gap: 16,
+          }}
+        >
           <section style={{ display: "grid", gap: 8 }}>
             <h2>Pronto pra emitir (real)</h2>
             <ul style={{ margin: 0 }}>
@@ -446,7 +458,7 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
               </button>
             </form>
           </section>
-        </>
+        </div>
       ) : null}
     </main>
   );
