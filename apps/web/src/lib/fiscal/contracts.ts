@@ -48,6 +48,20 @@ export type ProviderConsultResult = {
 export type ProviderCancelResult = {
   status: Extract<NfseStatus, "cancel_requested" | "cancelled" | "rejected">;
   providerRequestId: string;
+  providerNfseNumber?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  rawResponse?: Json;
+  error?: ProviderError;
+};
+
+export type ProviderSubstituteResult = {
+  status: Extract<NfseStatus, "substitute_requested" | "substituted" | "rejected">;
+  providerRequestId: string;
+  providerNfseNumber?: string;
+  oldNfseNumber?: string;
+  errorCode?: string;
+  errorMessage?: string;
   rawResponse?: Json;
   error?: ProviderError;
 };

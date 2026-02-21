@@ -47,6 +47,11 @@ type DryRunResponse = {
   warnings?: ValidationItem[];
 };
 
+type ActionApiError = {
+  error?: string;
+  message?: string;
+};
+
 function getResponseMessage(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const maybeMessage = (payload as { message?: unknown }).message;
@@ -79,6 +84,7 @@ export function NfsesClient() {
   const [issueResult, setIssueResult] = useState<IssueApiResponse | null>(null);
   const [translatedByNfse, setTranslatedByNfse] = useState<Record<string, Translation | null>>({});
   const [showTranslatedByNfse, setShowTranslatedByNfse] = useState<Record<string, boolean>>({});
+  const [actionLoadingByNfse, setActionLoadingByNfse] = useState<Record<string, "cancel" | "substitute" | null>>({});
   const serviceDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
   const parsedServiceValue = useMemo(() => Number(serviceValueInput), [serviceValueInput]);
@@ -375,6 +381,68 @@ export function NfsesClient() {
     setTranslatedByNfse((prev) => ({ ...prev, [nfse.id]: translation }));
   }
 
+  async function handleStatusAction(nfse: NfseRow, action: "cancel" | "substitute") {
+    if (!tenantId) {
+      setIssueTranslation(translateIssueError({ type: "UNKNOWN", errorMessage: "Tenant ativo não encontrado." }));
+      return;
+    }
+    if (!session?.access_token) {
+      setIssueTranslation(translateIssueError({ type: "UNKNOWN", errorMessage: "Sessão inválida. Faça login novamente." }));
+      return;
+    }
+
+    const reasonPrompt = action === "cancel" ? "Informe o motivo do cancelamento:" : "Informe o motivo da substituição:";
+    const reason = window.prompt(reasonPrompt, "")?.trim() ?? "";
+    if (!reason) {
+      setIssueTranslation(
+        translateIssueError({
+          type: "ACTION_ERROR",
+          operation: action,
+          companyId: nfse.company_id,
+          errorCode: "E_REASON",
+          errorMessage: "Motivo obrigatório.",
+        })
+      );
+      return;
+    }
+
+    setActionLoadingByNfse((prev) => ({ ...prev, [nfse.id]: action }));
+    const response = await fetch(action === "cancel" ? "/api/nfse/cancel" : "/api/nfse/substitute", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tenantId,
+        nfseId: nfse.id,
+        reason,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as ActionApiError | null;
+    setActionLoadingByNfse((prev) => ({ ...prev, [nfse.id]: null }));
+
+    if (!response.ok) {
+      setIssueTranslation(
+        translateIssueError({
+          type: "ACTION_ERROR",
+          operation: action,
+          companyId: nfse.company_id,
+          errorCode: payload?.error ?? null,
+          errorMessage: payload?.message ?? `Falha ao ${action === "cancel" ? "cancelar" : "substituir"} NFS-e.`,
+        })
+      );
+      return;
+    }
+
+    setIssueTranslation(null);
+    await loadNfses();
+    if (showTranslatedByNfse[nfse.id]) {
+      setShowTranslatedByNfse((prev) => ({ ...prev, [nfse.id]: false }));
+    }
+  }
+
   async function toggleEvents(nfseId: string) {
     const isExpanded = Boolean(expandedByNfse[nfseId]);
     setExpandedByNfse((prev) => ({ ...prev, [nfseId]: !isExpanded }));
@@ -540,6 +608,24 @@ export function NfsesClient() {
                       <button type="button" onClick={() => toggleEvents(nfse.id)}>
                         {expandedByNfse[nfse.id] ? "Ocultar eventos" : "Ver eventos"}
                       </button>
+                      {nfse.status === "authorized" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleStatusAction(nfse, "cancel")}
+                            disabled={Boolean(actionLoadingByNfse[nfse.id])}
+                          >
+                            {actionLoadingByNfse[nfse.id] === "cancel" ? "Cancelando..." : "Cancelar"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStatusAction(nfse, "substitute")}
+                            disabled={Boolean(actionLoadingByNfse[nfse.id])}
+                          >
+                            {actionLoadingByNfse[nfse.id] === "substitute" ? "Substituindo..." : "Substituir"}
+                          </button>
+                        </>
+                      ) : null}
                       {nfse.status === "rejected" ? (
                         <button type="button" onClick={() => handleExplainRejected(nfse)}>
                           {showTranslatedByNfse[nfse.id] ? "Ocultar explicação" : "Entender erro"}

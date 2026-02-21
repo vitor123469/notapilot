@@ -99,26 +99,115 @@ export class MockNfseNacionalProvider implements FiscalProvider {
     };
   }
 
-  async cancel(params: { tenantId: string; nfseId: string; reason?: string }) {
+  async cancel(params: {
+    tenantId: string;
+    nfseId: string;
+    providerRequestId?: string;
+    providerNfseNumber?: string;
+    reason?: string;
+  }) {
+    const providerRequestId = params.providerRequestId ?? randomId("mock_req");
+    const reason = params.reason?.trim() ?? "";
+    const providerNfseNumber = params.providerNfseNumber?.trim() ?? "";
+
+    if (!providerNfseNumber) {
+      return {
+        status: "rejected" as const,
+        providerRequestId,
+        errorCode: "E_NO_NUMBER",
+        errorMessage: "NFS-e sem número do provider para cancelamento.",
+        error: { code: "E_NO_NUMBER", message: "NFS-e sem número do provider para cancelamento." },
+        rawResponse: {
+          provider: "mock_nfse_nacional",
+          accepted: false,
+          code: "E_NO_NUMBER",
+        },
+      };
+    }
+
+    if (!reason) {
+      return {
+        status: "rejected" as const,
+        providerRequestId,
+        providerNfseNumber,
+        errorCode: "E_REASON",
+        errorMessage: "Motivo do cancelamento é obrigatório.",
+        error: { code: "E_REASON", message: "Motivo do cancelamento é obrigatório." },
+        rawResponse: {
+          provider: "mock_nfse_nacional",
+          accepted: false,
+          code: "E_REASON",
+        },
+      };
+    }
+
     return {
-      status: "cancel_requested" as const,
-      providerRequestId: randomId("mock_req"),
+      status: "cancelled" as const,
+      providerRequestId,
+      providerNfseNumber,
       rawResponse: {
         provider: "mock_nfse_nacional",
         note: "Cancelamento simulado no mock.",
-        reason: params.reason ?? null,
+        reason,
+        cancelledAt: new Date().toISOString(),
       },
     };
   }
 
-  async substitute(params: { tenantId: string; nfseId: string; substituteReason?: string }) {
+  async substitute(params: {
+    tenantId: string;
+    nfseId: string;
+    providerRequestId?: string;
+    oldNfseNumber?: string;
+    reason?: string;
+  }) {
+    const providerRequestId = params.providerRequestId ?? randomId("mock_req");
+    const oldNfseNumber = params.oldNfseNumber?.trim() ?? "";
+    const reason = params.reason?.trim() ?? "";
+
+    if (!oldNfseNumber) {
+      return {
+        status: "rejected" as const,
+        providerRequestId,
+        errorCode: "E_NO_NUMBER",
+        errorMessage: "NFS-e sem número anterior para substituição.",
+        error: { code: "E_NO_NUMBER", message: "NFS-e sem número anterior para substituição." },
+        rawResponse: {
+          provider: "mock_nfse_nacional",
+          accepted: false,
+          code: "E_NO_NUMBER",
+        },
+      };
+    }
+
+    if (!reason) {
+      return {
+        status: "rejected" as const,
+        providerRequestId,
+        oldNfseNumber,
+        errorCode: "E_REASON",
+        errorMessage: "Motivo da substituição é obrigatório.",
+        error: { code: "E_REASON", message: "Motivo da substituição é obrigatório." },
+        rawResponse: {
+          provider: "mock_nfse_nacional",
+          accepted: false,
+          code: "E_REASON",
+        },
+      };
+    }
+
+    const newNfseNumber = randomNfseNumber();
     return {
-      status: "substitute_requested" as const,
-      providerRequestId: randomId("mock_req"),
+      status: "substituted" as const,
+      providerRequestId,
+      providerNfseNumber: newNfseNumber,
+      oldNfseNumber,
       rawResponse: {
         provider: "mock_nfse_nacional",
         note: "Substituição simulada no mock.",
-        substituteReason: params.substituteReason ?? null,
+        reason,
+        oldNumber: oldNfseNumber,
+        newNumber: newNfseNumber,
       },
     };
   }
