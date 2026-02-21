@@ -85,9 +85,12 @@ export function NfsesClient() {
   const [translatedByNfse, setTranslatedByNfse] = useState<Record<string, Translation | null>>({});
   const [showTranslatedByNfse, setShowTranslatedByNfse] = useState<Record<string, boolean>>({});
   const [actionLoadingByNfse, setActionLoadingByNfse] = useState<Record<string, "cancel" | "substitute" | null>>({});
+  const [defaultDescriptionByCompany, setDefaultDescriptionByCompany] = useState<Record<string, string>>({});
+  const [isLoadingDefaultDescription, setIsLoadingDefaultDescription] = useState(false);
   const serviceDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
   const parsedServiceValue = useMemo(() => Number(serviceValueInput), [serviceValueInput]);
+  const companyDefaultDescription = companyId ? defaultDescriptionByCompany[companyId] ?? "" : "";
 
   const createIdempotencyKey = useCallback(() => {
     return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -163,6 +166,42 @@ export function NfsesClient() {
     });
   }, [loadCompanies, loadNfses, tenantId]);
 
+  useEffect(() => {
+    if (!tenantId || !companyId) return;
+    if (defaultDescriptionByCompany[companyId] !== undefined) return;
+
+    let isMounted = true;
+    setIsLoadingDefaultDescription(true);
+
+    (async () => {
+      const supabase = getSupabaseBrowser();
+      const { data, error } = await supabase
+        .from("company_fiscal_settings")
+        .select("default_service_description")
+        .eq("tenant_id", tenantId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (error) {
+        setDefaultDescriptionByCompany((prev) => ({ ...prev, [companyId]: "" }));
+        setIsLoadingDefaultDescription(false);
+        return;
+      }
+
+      setDefaultDescriptionByCompany((prev) => ({
+        ...prev,
+        [companyId]: data?.default_service_description?.trim() ?? "",
+      }));
+      setIsLoadingDefaultDescription(false);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [companyId, defaultDescriptionByCompany, tenantId]);
+
   const loadEvents = useCallback(
     async (nfseId: string) => {
       if (!tenantId) return;
@@ -220,6 +259,23 @@ export function NfsesClient() {
         translateIssueError({
           type: "UNKNOWN",
           errorMessage: "Selecione uma empresa para emitir.",
+        })
+      );
+      return;
+    }
+    if (!serviceDescription.trim() && !companyDefaultDescription) {
+      setIssueTranslation(
+        translateIssueError({
+          type: "VALIDATION_FAILED",
+          companyId,
+          missing: [
+            {
+              field: "serviceDescription",
+              label: "Descrição obrigatória",
+              suggestion: "Preencha no formulário ou configure uma descrição padrão na Config fiscal.",
+            },
+          ],
+          warnings: [],
         })
       );
       return;
@@ -502,6 +558,20 @@ export function NfsesClient() {
               placeholder="Serviço prestado..."
             />
           </label>
+          {companyId && !serviceDescription.trim() && companyDefaultDescription ? (
+            <div style={{ display: "grid", gap: 6 }}>
+              <small style={{ color: "#555" }}>
+                Se deixar em branco, será usada a descrição padrão: {companyDefaultDescription.slice(0, 120)}
+                {companyDefaultDescription.length > 120 ? "..." : ""}
+              </small>
+              <button type="button" onClick={() => setServiceDescription(companyDefaultDescription)} style={{ width: "fit-content" }}>
+                Usar padrão
+              </button>
+            </div>
+          ) : null}
+          {companyId && !serviceDescription.trim() && !companyDefaultDescription && !isLoadingDefaultDescription ? (
+            <small style={{ color: "crimson" }}>Descrição obrigatória</small>
+          ) : null}
 
           <label style={{ display: "grid", gap: 4 }}>
             Valor do serviço
