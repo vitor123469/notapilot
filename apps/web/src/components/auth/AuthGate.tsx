@@ -21,6 +21,7 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
     { href: "/app", label: "Dashboard" },
     { href: "/app/companies", label: "Empresas" },
     { href: "/app/clients", label: "Clientes" },
+    { href: "/app/nfses", label: "NFS-e" },
   ];
 
   useEffect(() => {
