@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useSession } from "../../lib/auth/useSession";
 import { clearActiveTenantId } from "../../lib/tenancy/activeTenant";
@@ -10,9 +10,15 @@ import { getSupabaseBrowser } from "../../lib/supabase/browserClient";
 
 export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
+  const pathname = usePathname();
   const { session, isLoading } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+
+  const navItems = [
+    { href: "/app", label: "Dashboard" },
+    { href: "/app/companies", label: "Empresas" },
+  ];
 
   useEffect(() => {
     if (!isLoading && !session) {
@@ -51,6 +57,26 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
           <Link href="/app">
             <strong>NotaPilot</strong>
           </Link>
+          <nav style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    textDecoration: "none",
+                    border: isActive ? "1px solid #111" : "1px solid transparent",
+                    fontWeight: isActive ? 700 : 500,
+                  }}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
           {session?.user?.email ? <span>{session.user.email}</span> : null}
         </div>
 
