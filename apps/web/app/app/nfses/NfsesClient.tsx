@@ -22,8 +22,32 @@ type IssueApiResponse = {
   nfseId: string;
   status: string;
   providerNfseNumber?: string;
+  errorCode?: string;
   errorMessage?: string;
 };
+
+type ValidationItem = {
+  field: string;
+  label: string;
+};
+
+type ValidationFailedResponse = {
+  error: "VALIDATION_FAILED";
+  missing?: ValidationItem[];
+  warnings?: ValidationItem[];
+};
+
+type DryRunResponse = {
+  ok: boolean;
+  missing?: ValidationItem[];
+  warnings?: ValidationItem[];
+};
+
+function getResponseMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const maybeMessage = (payload as { message?: unknown }).message;
+  return typeof maybeMessage === "string" ? maybeMessage : undefined;
+}
 
 export function NfsesClient() {
   const router = useRouter();
@@ -49,8 +73,16 @@ export function NfsesClient() {
   const [isIssuing, setIsIssuing] = useState(false);
   const [issueError, setIssueError] = useState("");
   const [issueResult, setIssueResult] = useState<IssueApiResponse | null>(null);
+  const [validationMissing, setValidationMissing] = useState<ValidationItem[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<ValidationItem[]>([]);
 
   const parsedServiceValue = useMemo(() => Number(serviceValueInput), [serviceValueInput]);
+
+  const createIdempotencyKey = useCallback(() => {
+    return typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }, []);
 
   const loadCompanies = useCallback(async () => {
     if (!tenantId) return;
@@ -151,6 +183,8 @@ export function NfsesClient() {
     event.preventDefault();
     setIssueError("");
     setIssueResult(null);
+    setValidationMissing([]);
+    setValidationWarnings([]);
 
     if (!session?.access_token) {
       setIssueError("Sessão inválida. Faça login novamente.");
@@ -164,20 +198,49 @@ export function NfsesClient() {
       setIssueError("Selecione uma company.");
       return;
     }
-    if (!serviceDescription.trim()) {
-      setIssueError("Descrição do serviço é obrigatória.");
-      return;
-    }
     if (!Number.isFinite(parsedServiceValue)) {
       setIssueError("Valor do serviço inválido.");
       return;
     }
 
     setIsIssuing(true);
-    const idempotencyKey =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const dryRunResponse = await fetch("/api/nfse/issue", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tenantId,
+        companyId,
+        idempotencyKey: createIdempotencyKey(),
+        dryRun: true,
+        serviceDescription: serviceDescription.trim(),
+        serviceValue: parsedServiceValue,
+      }),
+    });
+
+    const dryRunPayload = (await dryRunResponse.json().catch(() => null)) as
+      | (DryRunResponse & { error?: string; message?: string })
+      | ValidationFailedResponse
+      | null;
+
+    if (dryRunResponse.status === 422 && dryRunPayload?.error === "VALIDATION_FAILED") {
+      setValidationMissing((dryRunPayload as ValidationFailedResponse).missing ?? []);
+      setValidationWarnings((dryRunPayload as ValidationFailedResponse).warnings ?? []);
+      setIssueError("A emissão foi bloqueada: faltam dados obrigatórios da empresa.");
+      setIsIssuing(false);
+      return;
+    }
+
+    if (!dryRunResponse.ok) {
+      setIssueError(getResponseMessage(dryRunPayload) ?? "Falha ao validar dados para emissão.");
+      setIsIssuing(false);
+      return;
+    }
+
+    setValidationMissing(dryRunPayload?.missing ?? []);
+    setValidationWarnings(dryRunPayload?.warnings ?? []);
 
     const response = await fetch("/api/nfse/issue", {
       method: "POST",
@@ -188,27 +251,36 @@ export function NfsesClient() {
       body: JSON.stringify({
         tenantId,
         companyId,
-        idempotencyKey,
+        idempotencyKey: createIdempotencyKey(),
         serviceDescription: serviceDescription.trim(),
         serviceValue: parsedServiceValue,
       }),
     });
 
     const payload = (await response.json().catch(() => null)) as
-      | (IssueApiResponse & { error?: string })
+      | (IssueApiResponse & { error?: string; message?: string })
+      | ValidationFailedResponse
       | null;
     setIsIssuing(false);
 
     if (!response.ok) {
-      setIssueError(payload?.error ?? "Falha ao emitir NFS-e.");
+      if (response.status === 422 && payload?.error === "VALIDATION_FAILED") {
+        setValidationMissing((payload as ValidationFailedResponse).missing ?? []);
+        setValidationWarnings((payload as ValidationFailedResponse).warnings ?? []);
+        setIssueError("A emissão foi bloqueada: faltam dados obrigatórios da empresa.");
+        return;
+      }
+      setIssueError(getResponseMessage(payload) ?? "Falha ao emitir NFS-e.");
       return;
     }
 
+    const issuePayload = payload as IssueApiResponse | null;
     setIssueResult({
-      nfseId: payload?.nfseId ?? "",
-      status: payload?.status ?? "submitted",
-      providerNfseNumber: payload?.providerNfseNumber,
-      errorMessage: payload?.errorMessage,
+      nfseId: issuePayload?.nfseId ?? "",
+      status: issuePayload?.status ?? "submitted",
+      providerNfseNumber: issuePayload?.providerNfseNumber,
+      errorCode: issuePayload?.errorCode,
+      errorMessage: issuePayload?.errorMessage,
     });
     await loadNfses();
   }
@@ -285,6 +357,35 @@ export function NfsesClient() {
 
           {issueError ? <p style={{ color: "crimson", margin: 0 }}>{issueError}</p> : null}
 
+          {validationMissing.length > 0 || validationWarnings.length > 0 ? (
+            <div style={{ display: "grid", gap: 8, border: "1px solid #f0d4d4", padding: 10, borderRadius: 8 }}>
+              <strong>Checklist antes de emitir</strong>
+              {validationMissing.length > 0 ? (
+                <div style={{ display: "grid", gap: 4 }}>
+                  <span style={{ color: "crimson" }}>Pendências obrigatórias:</span>
+                  <ul style={{ margin: 0 }}>
+                    {validationMissing.map((item) => (
+                      <li key={`missing-${item.field}`}>{item.label}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <span style={{ color: "green" }}>Dados obrigatórios validados com sucesso.</span>
+              )}
+
+              {validationWarnings.length > 0 ? (
+                <div style={{ display: "grid", gap: 4 }}>
+                  <span>Avisos recomendados:</span>
+                  <ul style={{ margin: 0 }}>
+                    {validationWarnings.map((item) => (
+                      <li key={`warning-${item.field}`}>{item.label}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <button type="submit" disabled={isIssuing || !companyId}>
             {isIssuing ? "Emitindo..." : "Emitir (mock)"}
           </button>
@@ -296,6 +397,7 @@ export function NfsesClient() {
             <span>Status: {issueResult.status}</span>
             <span>NFS-e: {issueResult.providerNfseNumber || "-"}</span>
             <span>NFSe ID: {issueResult.nfseId}</span>
+            <span>Código: {issueResult.errorCode || "-"}</span>
             {issueResult.errorMessage ? <span>Erro: {issueResult.errorMessage}</span> : null}
           </div>
         ) : null}
