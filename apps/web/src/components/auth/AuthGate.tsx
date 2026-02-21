@@ -7,11 +7,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "../../lib/auth/useSession";
 import { clearActiveTenantId } from "../../lib/tenancy/activeTenant";
 import { getSupabaseBrowser } from "../../lib/supabase/browserClient";
+import { useActiveTenant } from "../../lib/tenancy/useActiveTenant";
 
 export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
   const pathname = usePathname();
   const { session, isLoading } = useSession();
+  const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
 
@@ -78,6 +80,7 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
               );
             })}
           </nav>
+          {tenantId ? <span>Tenant: {tenantId.slice(0, 6)}</span> : null}
           {session?.user?.email ? <span>{session.user.email}</span> : null}
         </div>
 
@@ -87,7 +90,16 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
       </header>
 
       {signOutError ? <p style={{ color: "crimson", marginBottom: 12 }}>{signOutError}</p> : null}
-      {!session ? <p>Validando sessão...</p> : isLoading ? <p>Carregando sessão...</p> : children}
+      {isLoading || isTenantLoading ? <p>Carregando...</p> : null}
+      {!isLoading && !isTenantLoading && tenantError ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <p style={{ color: "crimson", margin: 0 }}>{tenantError}</p>
+          <button type="button" onClick={() => router.refresh()}>
+            Recarregar
+          </button>
+        </div>
+      ) : null}
+      {!isLoading && !isTenantLoading && session && tenantId && !tenantError ? children : null}
     </div>
   );
 }
