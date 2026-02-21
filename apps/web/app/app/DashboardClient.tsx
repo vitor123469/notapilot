@@ -1,90 +1,102 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { useSession } from "../../src/lib/auth/useSession";
 import { getSupabaseBrowser } from "../../src/lib/supabase/browserClient";
-import { getActiveTenantId } from "../../src/lib/tenancy/activeTenant";
+import { useActiveTenant } from "../../src/lib/tenancy/useActiveTenant";
 
 export function DashboardClient() {
   const router = useRouter();
-  const { session, isLoading } = useSession();
-  const [activeTenantId, setActiveTenantIdState] = useState<string | null>(null);
+  const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
   const [tenantName, setTenantName] = useState<string>("");
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    if (!isLoading && !session) {
-      router.replace("/auth/login");
+  const loadTenant = useCallback(async () => {
+    if (!tenantId) return;
+
+    const supabase = getSupabaseBrowser();
+    setLoadError("");
+    setIsLoadingData(true);
+
+    const { data: tenant, error } = await supabase.from("tenants").select("id, name").eq("id", tenantId).maybeSingle();
+
+    if (error) {
+      setLoadError("Não foi possível carregar os dados do tenant. Tente recarregar.");
+      setIsLoadingData(false);
       return;
     }
 
-    if (isLoading || !session) return;
-
-    const tenantId = getActiveTenantId();
-    if (!tenantId) {
+    if (!tenant) {
       router.replace("/app/onboarding");
       return;
     }
-    setActiveTenantIdState(tenantId);
-  }, [isLoading, router, session]);
+
+    setTenantName(tenant.name);
+    setIsLoadingData(false);
+  }, [router, tenantId]);
 
   useEffect(() => {
-    if (!session || !activeTenantId) return;
+    if (!tenantId) return;
 
-    const load = async () => {
-      const supabase = getSupabaseBrowser();
-      setLoadError("");
-      setIsLoadingData(true);
-
-      const { data: tenant, error: tenantError } = await supabase
-        .from("tenants")
-        .select("id, name")
-        .eq("id", activeTenantId)
-        .maybeSingle();
-
-      if (tenantError) {
-        setLoadError(tenantError.message);
-        setIsLoadingData(false);
-        return;
-      }
-
-      if (!tenant) {
-        router.replace("/app/onboarding");
-        return;
-      }
-
-      setTenantName(tenant.name);
-      setIsLoadingData(false);
-    };
-
-    load().catch((error) => {
-      setLoadError(error instanceof Error ? error.message : String(error));
+    loadTenant().catch(() => {
+      setLoadError("Não foi possível carregar os dados do tenant. Tente recarregar.");
       setIsLoadingData(false);
     });
-  }, [activeTenantId, router, session]);
+  }, [loadTenant, tenantId]);
+
+  if (isTenantLoading) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Dashboard</h1>
+        <p>Validando tenant ativo...</p>
+      </main>
+    );
+  }
+
+  if (tenantError) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Dashboard</h1>
+        <p style={{ color: "crimson", margin: 0 }}>{tenantError}</p>
+        <button type="button" onClick={() => router.refresh()}>
+          Recarregar
+        </button>
+      </main>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Dashboard</h1>
+        <p>
+          Preparando tenant... <Link href="/app/onboarding">Ir para onboarding</Link>
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main style={{ display: "grid", gap: 20 }}>
       <h1>Dashboard</h1>
-
-      {!activeTenantId ? (
-        <p>
-          Preparando tenant... <Link href="/app/onboarding">Ir para onboarding</Link>
-        </p>
-      ) : (
-        <section style={{ display: "grid", gap: 8 }}>
-          <strong>Tenant ativo</strong>
-          <span>{tenantName || "(sem nome)"}</span>
-          <small>{activeTenantId}</small>
-        </section>
-      )}
+      <section style={{ display: "grid", gap: 8 }}>
+        <strong>Tenant ativo</strong>
+        <span>{tenantName || "(sem nome)"}</span>
+        <small>{tenantId}</small>
+      </section>
 
       {isLoadingData ? <p>Carregando dados do tenant...</p> : null}
-      {loadError ? <p style={{ color: "crimson" }}>{loadError}</p> : null}
+      {loadError ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <p style={{ color: "crimson", margin: 0 }}>{loadError}</p>
+          <button type="button" onClick={() => loadTenant()}>
+            Recarregar
+          </button>
+        </div>
+      ) : null}
 
       <section style={{ display: "grid", gap: 10 }}>
         <h2>Empresas</h2>

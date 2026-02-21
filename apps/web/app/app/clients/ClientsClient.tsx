@@ -3,13 +3,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { useSession } from "../../../src/lib/auth/useSession";
 import { isValidCnpj } from "../../../src/lib/br/cnpj";
 import { isValidCpf } from "../../../src/lib/br/cpf";
 import { formatCpfCnpj, normalizeCpfCnpj } from "../../../src/lib/br/cpfCnpj";
 import type { Database } from "../../../src/lib/supabase/db.types";
 import { getSupabaseBrowser } from "../../../src/lib/supabase/browserClient";
-import { getActiveTenantId } from "../../../src/lib/tenancy/activeTenant";
+import { useActiveTenant } from "../../../src/lib/tenancy/useActiveTenant";
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 type ClientListRow = Pick<ClientRow, "id" | "name" | "cpf_cnpj" | "email" | "phone" | "created_at">;
@@ -23,8 +22,7 @@ function getFriendlyClientError(error: { code?: string; message: string; details
 
 export function ClientsClient() {
   const router = useRouter();
-  const { session, isLoading } = useSession();
-  const [activeTenantId, setActiveTenantIdState] = useState<string | null>(null);
+  const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
 
   const [clients, setClients] = useState<ClientListRow[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -63,7 +61,7 @@ export function ClientsClient() {
   }, []);
 
   const loadClients = useCallback(async () => {
-    if (!activeTenantId) return;
+    if (!tenantId) return;
 
     const supabase = getSupabaseBrowser();
     setLoadError("");
@@ -72,50 +70,33 @@ export function ClientsClient() {
     const { data, error } = await supabase
       .from("clients")
       .select("id, name, cpf_cnpj, email, phone, created_at")
-      .eq("tenant_id", activeTenantId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false });
 
     if (error) {
-      setLoadError(error.message);
+      setLoadError("Não foi possível carregar clientes. Tente recarregar.");
       setIsLoadingData(false);
       return;
     }
 
     setClients(data ?? []);
     setIsLoadingData(false);
-  }, [activeTenantId]);
+  }, [tenantId]);
 
   useEffect(() => {
-    if (!isLoading && !session) {
-      router.replace("/auth/login");
-      return;
-    }
+    if (!tenantId) return;
 
-    if (isLoading || !session) return;
-
-    const tenantId = getActiveTenantId();
-    if (!tenantId) {
-      router.replace("/app/onboarding");
-      return;
-    }
-
-    setActiveTenantIdState(tenantId);
-  }, [isLoading, router, session]);
-
-  useEffect(() => {
-    if (!session || !activeTenantId) return;
-
-    loadClients().catch((error) => {
-      setLoadError(error instanceof Error ? error.message : String(error));
+    loadClients().catch(() => {
+      setLoadError("Não foi possível carregar clientes. Tente recarregar.");
       setIsLoadingData(false);
     });
-  }, [activeTenantId, loadClients, session]);
+  }, [loadClients, tenantId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
 
-    if (!activeTenantId) {
+    if (!tenantId) {
       setSubmitError("Tenant ativo não encontrado.");
       return;
     }
@@ -136,8 +117,8 @@ export function ClientsClient() {
     const supabase = getSupabaseBrowser();
 
     const result = editingClientId
-      ? await supabase.from("clients").update(payload).eq("id", editingClientId).eq("tenant_id", activeTenantId)
-      : await supabase.from("clients").insert({ ...payload, tenant_id: activeTenantId });
+      ? await supabase.from("clients").update(payload).eq("id", editingClientId).eq("tenant_id", tenantId)
+      : await supabase.from("clients").insert({ ...payload, tenant_id: tenantId });
 
     setIsSubmitting(false);
 
@@ -161,7 +142,7 @@ export function ClientsClient() {
   }
 
   async function handleDelete(client: ClientListRow) {
-    if (!activeTenantId) {
+    if (!tenantId) {
       setDeleteError("Tenant ativo não encontrado.");
       return;
     }
@@ -172,11 +153,11 @@ export function ClientsClient() {
     setDeleteError("");
     setDeletingClientId(client.id);
     const supabase = getSupabaseBrowser();
-    const { error } = await supabase.from("clients").delete().eq("id", client.id).eq("tenant_id", activeTenantId);
+    const { error } = await supabase.from("clients").delete().eq("id", client.id).eq("tenant_id", tenantId);
     setDeletingClientId(null);
 
     if (error) {
-      setDeleteError(error.message);
+      setDeleteError("Não foi possível excluir cliente. Tente recarregar.");
       return;
     }
 
@@ -185,6 +166,36 @@ export function ClientsClient() {
     }
 
     await loadClients();
+  }
+
+  if (isTenantLoading) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Clientes</h1>
+        <p>Validando tenant ativo...</p>
+      </main>
+    );
+  }
+
+  if (tenantError) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Clientes</h1>
+        <p style={{ color: "crimson", margin: 0 }}>{tenantError}</p>
+        <button type="button" onClick={() => router.refresh()}>
+          Recarregar
+        </button>
+      </main>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Clientes</h1>
+        <p>Preparando tenant...</p>
+      </main>
+    );
   }
 
   return (
@@ -247,7 +258,14 @@ export function ClientsClient() {
       <section style={{ display: "grid", gap: 10 }}>
         <h2>Lista de clientes</h2>
         {isLoadingData ? <p>Carregando clientes...</p> : null}
-        {loadError ? <p style={{ color: "crimson" }}>{loadError}</p> : null}
+        {loadError ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <p style={{ color: "crimson", margin: 0 }}>{loadError}</p>
+            <button type="button" onClick={() => loadClients()}>
+              Recarregar
+            </button>
+          </div>
+        ) : null}
         {deleteError ? <p style={{ color: "crimson" }}>{deleteError}</p> : null}
 
         {!isLoadingData && !loadError && clients.length === 0 ? <p>Nenhum cliente cadastrado.</p> : null}

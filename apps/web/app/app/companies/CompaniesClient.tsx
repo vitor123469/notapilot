@@ -3,11 +3,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { useSession } from "../../../src/lib/auth/useSession";
 import { formatCnpj, isValidCnpj, normalizeCnpj } from "../../../src/lib/br/cnpj";
 import type { Database } from "../../../src/lib/supabase/db.types";
 import { getSupabaseBrowser } from "../../../src/lib/supabase/browserClient";
-import { getActiveTenantId } from "../../../src/lib/tenancy/activeTenant";
+import { useActiveTenant } from "../../../src/lib/tenancy/useActiveTenant";
 
 type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
 type CompanyListRow = Pick<
@@ -25,8 +24,7 @@ function getFriendlyCompanyError(error: { code?: string; message: string; detail
 
 export function CompaniesClient() {
   const router = useRouter();
-  const { session, isLoading } = useSession();
-  const [activeTenantId, setActiveTenantIdState] = useState<string | null>(null);
+  const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
 
   const [companies, setCompanies] = useState<CompanyListRow[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -63,7 +61,7 @@ export function CompaniesClient() {
   }, []);
 
   const loadCompanies = useCallback(async () => {
-    if (!activeTenantId) return;
+    if (!tenantId) return;
 
     const supabase = getSupabaseBrowser();
     setLoadError("");
@@ -72,50 +70,33 @@ export function CompaniesClient() {
     const { data, error } = await supabase
       .from("companies")
       .select("id, legal_name, trade_name, cnpj, municipal_registration, created_at")
-      .eq("tenant_id", activeTenantId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false });
 
     if (error) {
-      setLoadError(error.message);
+      setLoadError("Não foi possível carregar companies. Tente recarregar.");
       setIsLoadingData(false);
       return;
     }
 
     setCompanies(data ?? []);
     setIsLoadingData(false);
-  }, [activeTenantId]);
+  }, [tenantId]);
 
   useEffect(() => {
-    if (!isLoading && !session) {
-      router.replace("/auth/login");
-      return;
-    }
+    if (!tenantId) return;
 
-    if (isLoading || !session) return;
-
-    const tenantId = getActiveTenantId();
-    if (!tenantId) {
-      router.replace("/app/onboarding");
-      return;
-    }
-
-    setActiveTenantIdState(tenantId);
-  }, [isLoading, router, session]);
-
-  useEffect(() => {
-    if (!session || !activeTenantId) return;
-
-    loadCompanies().catch((error) => {
-      setLoadError(error instanceof Error ? error.message : String(error));
+    loadCompanies().catch(() => {
+      setLoadError("Não foi possível carregar companies. Tente recarregar.");
       setIsLoadingData(false);
     });
-  }, [activeTenantId, loadCompanies, session]);
+  }, [loadCompanies, tenantId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
 
-    if (!activeTenantId) {
+    if (!tenantId) {
       setSubmitError("Tenant ativo não encontrado.");
       return;
     }
@@ -136,8 +117,8 @@ export function CompaniesClient() {
     const supabase = getSupabaseBrowser();
 
     const result = editingCompanyId
-      ? await supabase.from("companies").update(payload).eq("id", editingCompanyId).eq("tenant_id", activeTenantId)
-      : await supabase.from("companies").insert({ ...payload, tenant_id: activeTenantId });
+      ? await supabase.from("companies").update(payload).eq("id", editingCompanyId).eq("tenant_id", tenantId)
+      : await supabase.from("companies").insert({ ...payload, tenant_id: tenantId });
 
     setIsSubmitting(false);
 
@@ -161,7 +142,7 @@ export function CompaniesClient() {
   }
 
   async function handleDelete(company: CompanyListRow) {
-    if (!activeTenantId) {
+    if (!tenantId) {
       setDeleteError("Tenant ativo não encontrado.");
       return;
     }
@@ -172,11 +153,11 @@ export function CompaniesClient() {
     setDeleteError("");
     setDeletingCompanyId(company.id);
     const supabase = getSupabaseBrowser();
-    const { error } = await supabase.from("companies").delete().eq("id", company.id).eq("tenant_id", activeTenantId);
+    const { error } = await supabase.from("companies").delete().eq("id", company.id).eq("tenant_id", tenantId);
     setDeletingCompanyId(null);
 
     if (error) {
-      setDeleteError(error.message);
+      setDeleteError("Não foi possível excluir company. Tente recarregar.");
       return;
     }
 
@@ -185,6 +166,36 @@ export function CompaniesClient() {
     }
 
     await loadCompanies();
+  }
+
+  if (isTenantLoading) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Empresas</h1>
+        <p>Validando tenant ativo...</p>
+      </main>
+    );
+  }
+
+  if (tenantError) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Empresas</h1>
+        <p style={{ color: "crimson", margin: 0 }}>{tenantError}</p>
+        <button type="button" onClick={() => router.refresh()}>
+          Recarregar
+        </button>
+      </main>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <main style={{ display: "grid", gap: 20 }}>
+        <h1>Empresas</h1>
+        <p>Preparando tenant...</p>
+      </main>
+    );
   }
 
   return (
@@ -255,7 +266,14 @@ export function CompaniesClient() {
       <section style={{ display: "grid", gap: 10 }}>
         <h2>Lista de companies</h2>
         {isLoadingData ? <p>Carregando companies...</p> : null}
-        {loadError ? <p style={{ color: "crimson" }}>{loadError}</p> : null}
+        {loadError ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <p style={{ color: "crimson", margin: 0 }}>{loadError}</p>
+            <button type="button" onClick={() => loadCompanies()}>
+              Recarregar
+            </button>
+          </div>
+        ) : null}
         {deleteError ? <p style={{ color: "crimson" }}>{deleteError}</p> : null}
 
         {!isLoadingData && !loadError && companies.length === 0 ? <p>Nenhuma company cadastrada.</p> : null}
