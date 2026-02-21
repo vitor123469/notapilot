@@ -18,6 +18,8 @@ const TAX_REGIME_OPTIONS = [
   { value: "mei", label: "MEI" },
   { value: "outro", label: "Outro" },
 ] as const;
+type TaxRegimeValue = (typeof TAX_REGIME_OPTIONS)[number]["value"];
+const TAX_REGIME_VALUES = new Set<string>(TAX_REGIME_OPTIONS.map((option) => option.value));
 
 function onlyDigits(input: string, max?: number): string {
   const normalized = input.replace(/\D/g, "");
@@ -28,6 +30,30 @@ function formatServiceListItem(input: string): string {
   const digits = onlyDigits(input, 4);
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+}
+
+function normalizeTaxRegime(input: string | null | undefined): TaxRegimeValue | "" {
+  const normalized = (input ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+  return TAX_REGIME_VALUES.has(normalized) ? (normalized as TaxRegimeValue) : "";
+}
+
+function formatSupabaseError(error: unknown): string {
+  if (!error || typeof error !== "object") return "Erro desconhecido";
+  const maybeError = error as {
+    status?: number;
+    code?: string;
+    message?: string;
+    details?: string | null;
+    hint?: string | null;
+  };
+
+  const parts: string[] = [];
+  if (typeof maybeError.status === "number") parts.push(`status=${maybeError.status}`);
+  if (maybeError.code) parts.push(`code=${maybeError.code}`);
+  if (maybeError.message) parts.push(`message=${maybeError.message}`);
+  if (maybeError.details) parts.push(`details=${maybeError.details}`);
+  if (maybeError.hint) parts.push(`hint=${maybeError.hint}`);
+  return parts.length > 0 ? parts.join(" | ") : JSON.stringify(error);
 }
 
 export function CompanySettingsClient({ companyId }: { companyId: string }) {
@@ -111,7 +137,7 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
     setAddressDistrict(settings?.address_district ?? "");
     setAddressCity(settings?.address_city ?? "");
     setAddressZip(settings?.address_zip ?? "");
-    setTaxRegime(settings?.tax_regime ?? "");
+    setTaxRegime(normalizeTaxRegime(settings?.tax_regime));
     setCnae(settings?.cnae ?? "");
     setServiceListItem(settings?.service_list_item ?? "");
     setServiceCode(settings?.service_code ?? "");
@@ -153,6 +179,7 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
     const normalizedCnae = onlyDigits(cnae);
     const normalizedIbge = onlyDigits(municipalityIbgeCode);
     const normalizedServiceListItem = formatServiceListItem(serviceListItem);
+    const normalizedTaxRegime = normalizeTaxRegime(taxRegime);
     const parsedIssRate = issRate.trim() ? Number(issRate) : null;
 
     if (parsedIssRate != null && (!Number.isFinite(parsedIssRate) || parsedIssRate < 0 || parsedIssRate > 100)) {
@@ -161,33 +188,69 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
       return;
     }
 
-    const { error: upsertError } = await supabase.from("company_fiscal_settings").upsert(
-      {
-        tenant_id: tenantId,
-        company_id: company.id,
-        municipality_name: municipalityName.trim() || null,
-        municipality_ibge_code: normalizedIbge || null,
-        state_uf: normalizedUf || null,
-        address_street: addressStreet.trim() || null,
-        address_number: addressNumber.trim() || null,
-        address_complement: addressComplement.trim() || null,
-        address_district: addressDistrict.trim() || null,
-        address_city: addressCity.trim() || null,
-        address_zip: normalizedZip || null,
-        tax_regime: taxRegime || null,
-        cnae: normalizedCnae || null,
-        service_list_item: normalizedServiceListItem || null,
-        service_code: serviceCode.trim() || null,
-        iss_rate: parsedIssRate,
-        default_service_description: defaultServiceDescription.trim() || null,
-      },
-      { onConflict: "tenant_id,company_id" }
-    );
+    const payload = {
+      municipality_name: municipalityName.trim() || null,
+      municipality_ibge_code: normalizedIbge || null,
+      state_uf: normalizedUf || null,
+      address_street: addressStreet.trim() || null,
+      address_number: addressNumber.trim() || null,
+      address_complement: addressComplement.trim() || null,
+      address_district: addressDistrict.trim() || null,
+      address_city: addressCity.trim() || null,
+      address_zip: normalizedZip || null,
+      tax_regime: normalizedTaxRegime || null,
+      cnae: normalizedCnae || null,
+      service_list_item: normalizedServiceListItem || null,
+      service_code: serviceCode.trim() || null,
+      iss_rate: parsedIssRate,
+      default_service_description: defaultServiceDescription.trim() || null,
+    };
 
-    if (upsertError) {
-      setSaveError("Falha ao salvar configurações fiscais.");
+    const { data: existingSettings, error: existingSettingsError } = await supabase
+      .from("company_fiscal_settings")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("company_id", company.id)
+      .maybeSingle();
+
+    if (existingSettingsError) {
+      console.error("save fiscal settings error", existingSettingsError);
+      setSaveError(`Falha ao buscar config fiscal existente: ${formatSupabaseError(existingSettingsError)}`);
       setIsSaving(false);
       return;
+    }
+
+    if (existingSettings?.id) {
+      const { error: updateSettingsError } = await supabase
+        .from("company_fiscal_settings")
+        .update(payload)
+        .eq("id", existingSettings.id)
+        .eq("tenant_id", tenantId)
+        .eq("company_id", company.id);
+
+      if (updateSettingsError) {
+        console.error("save fiscal settings error", updateSettingsError);
+        setSaveError(`Falha ao atualizar configurações fiscais: ${formatSupabaseError(updateSettingsError)}`);
+        setIsSaving(false);
+        return;
+      }
+    } else {
+      const { error: insertSettingsError } = await supabase
+        .from("company_fiscal_settings")
+        .insert({
+          ...payload,
+          tenant_id: tenantId,
+          company_id: company.id,
+        })
+        .select("id")
+        .single();
+
+      if (insertSettingsError) {
+        console.error("save fiscal settings error", insertSettingsError);
+        setSaveError(`Falha ao criar configurações fiscais: ${formatSupabaseError(insertSettingsError)}`);
+        setIsSaving(false);
+        return;
+      }
     }
 
     if ((municipalRegistration.trim() || null) !== (company.municipal_registration ?? null)) {
@@ -198,7 +261,10 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
         .eq("id", company.id);
 
       if (companyUpdateError) {
-        setSaveError("Config fiscal salva, mas falhou ao atualizar inscrição municipal da empresa.");
+        console.error("save fiscal settings error", companyUpdateError);
+        setSaveError(
+          `Config fiscal salva, mas falhou ao atualizar inscrição municipal da empresa: ${formatSupabaseError(companyUpdateError)}`
+        );
         setIsSaving(false);
         return;
       }
