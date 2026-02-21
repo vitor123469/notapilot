@@ -3,6 +3,7 @@ import type { Translation, TranslationField } from "./errorTranslator.types";
 type ValidationItem = {
   field: string;
   label: string;
+  suggestion?: string;
 };
 
 type TranslateIssueErrorInput =
@@ -29,11 +30,23 @@ function normalizeMessage(input: string | null | undefined): string {
   return input.replace(/\s+/g, " ").replace(/(postgrest|sqlstate|stack|traceback)\b/gi, "").trim();
 }
 
+const FORM_FIELDS = new Set(["serviceValue", "serviceDescription"]);
+
+function isFormField(field: string): boolean {
+  return FORM_FIELDS.has(field);
+}
+
 function toField(item: ValidationItem, isWarning: boolean): TranslationField {
   return {
     field: item.field,
     label: item.label,
-    suggestion: isWarning ? "Recomendado ajustar na Config fiscal." : "Complete esse dado na Config fiscal.",
+    suggestion:
+      item.suggestion ??
+      (isFormField(item.field)
+        ? "Preencha esse dado no formulário de emissão."
+        : isWarning
+          ? "Recomendado ajustar na Config fiscal."
+          : "Complete esse dado na Config fiscal."),
   };
 }
 
@@ -41,7 +54,7 @@ function configActions(companyId?: string): Translation["actions"] {
   return [
     {
       label: "Abrir Config fiscal",
-      href: companyId ? `/app/companies/${companyId}/settings` : "/app/companies",
+      href: companyId ? `/app/companies/${companyId}/settings?returnTo=%2Fapp%2Fnfses` : "/app/companies",
       kind: "link",
     },
     { label: "Voltar", kind: "button" },
@@ -53,13 +66,31 @@ export function translateIssueError(input: TranslateIssueErrorInput): Translatio
     const missing = input.missing ?? [];
     const warnings = input.warnings ?? [];
     const fields = [...missing.map((item) => toField(item, false)), ...warnings.map((item) => toField(item, true))];
+    const hasFormMissing = missing.some((item) => isFormField(item.field));
+    const hasFiscalMissing = missing.some((item) => !isFormField(item.field));
+
+    let actions: Translation["actions"];
+    if (hasFormMissing && !hasFiscalMissing) {
+      actions = [{ label: "Voltar ao formulário", kind: "button" }];
+    } else if (hasFiscalMissing && !hasFormMissing) {
+      actions = configActions(input.companyId);
+    } else {
+      actions = [
+        {
+          label: "Abrir Config fiscal",
+          href: input.companyId ? `/app/companies/${input.companyId}/settings?returnTo=%2Fapp%2Fnfses` : "/app/companies",
+          kind: "link",
+        },
+        { label: "Voltar ao formulário", kind: "button" },
+      ];
+    }
 
     return {
       title: "Faltam dados para emitir",
       message: "Complete os dados obrigatórios antes de emitir a NFS-e.",
       severity: "warning",
       fields,
-      actions: configActions(input.companyId),
+      actions,
     };
   }
 

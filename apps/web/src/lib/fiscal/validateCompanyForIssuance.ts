@@ -7,6 +7,7 @@ type CompanyFiscalSettingsRow = Database["public"]["Tables"]["company_fiscal_set
 export type IssuanceValidationItem = {
   field: string;
   label: string;
+  suggestion?: string;
 };
 
 export type ValidateCompanyForIssuanceInput = {
@@ -149,12 +150,17 @@ export async function validateCompanyForIssuance(
   if (!effectiveServiceDescription) {
     missing.push({
       field: "serviceDescription",
-      label: "Descrição do serviço (informada no rascunho ou padrão da empresa)",
+      label: "Descrição do serviço",
+      suggestion: "Preencha a descrição no formulário (ou defina uma descrição padrão na Config fiscal).",
     });
   }
 
   if (normalizedServiceValue === null || normalizedServiceValue <= 0) {
-    missing.push({ field: "serviceValue", label: "Valor do serviço maior que zero" });
+    missing.push({
+      field: "serviceValue",
+      label: "Valor do serviço",
+      suggestion: "Informe um valor maior que zero no formulário de emissão.",
+    });
   }
 
   return {
