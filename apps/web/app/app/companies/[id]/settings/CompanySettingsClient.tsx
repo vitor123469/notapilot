@@ -56,7 +56,7 @@ function formatSupabaseError(error: unknown): string {
   return parts.length > 0 ? parts.join(" | ") : JSON.stringify(error);
 }
 
-export function CompanySettingsClient({ companyId }: { companyId: string }) {
+export function CompanySettingsClient({ companyId, returnTo }: { companyId: string; returnTo?: string }) {
   const router = useRouter();
   const { session, isLoading: isSessionLoading } = useSession();
   const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
@@ -273,7 +273,7 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
     setIsSaving(false);
     setSaveMessage("Salvo.");
     setTimeout(() => {
-      router.push("/app/companies");
+      router.push(returnTo || "/app/companies");
     }, 500);
   }
 
@@ -323,7 +323,7 @@ export function CompanySettingsClient({ companyId }: { companyId: string }) {
     <main style={{ display: "grid", gap: 20 }}>
       <header style={{ display: "grid", gap: 4 }}>
         <h1>Config Fiscal</h1>
-        <button type="button" onClick={() => router.push("/app/companies")} style={{ width: "fit-content" }}>
+        <button type="button" onClick={() => router.push(returnTo || "/app/companies")} style={{ width: "fit-content" }}>
           Voltar
         </button>
         {company ? <p style={{ margin: 0 }}>Empresa: {company.legal_name}</p> : null}

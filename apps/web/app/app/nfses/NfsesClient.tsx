@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -32,6 +32,7 @@ type IssueApiResponse = {
 type ValidationItem = {
   field: string;
   label: string;
+  suggestion?: string;
 };
 
 type ValidationFailedResponse = {
@@ -78,6 +79,7 @@ export function NfsesClient() {
   const [issueResult, setIssueResult] = useState<IssueApiResponse | null>(null);
   const [translatedByNfse, setTranslatedByNfse] = useState<Record<string, Translation | null>>({});
   const [showTranslatedByNfse, setShowTranslatedByNfse] = useState<Record<string, boolean>>({});
+  const serviceDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
   const parsedServiceValue = useMemo(() => Number(serviceValueInput), [serviceValueInput]);
 
@@ -342,6 +344,11 @@ export function NfsesClient() {
   }
 
   function handleTranslationAction(actionLabel: string) {
+    if (actionLabel === "Voltar ao formulário") {
+      setIssueTranslation(null);
+      serviceDescriptionRef.current?.focus();
+      return;
+    }
     if (actionLabel === "Voltar") {
       router.back();
       return;
@@ -420,6 +427,7 @@ export function NfsesClient() {
           <label style={{ display: "grid", gap: 4 }}>
             Descrição do serviço
             <textarea
+              ref={serviceDescriptionRef}
               value={serviceDescription}
               onChange={(event) => setServiceDescription(event.target.value)}
               rows={4}
@@ -452,7 +460,7 @@ export function NfsesClient() {
               <strong>{issueTranslation.title}</strong>
               <span>{issueTranslation.message}</span>
               {issueTranslation.fields && issueTranslation.fields.length > 0 ? (
-                <ul style={{ margin: 0 }}>
+                <ul style={{ paddingLeft: 16, margin: 0, listStylePosition: "inside" }}>
                   {issueTranslation.fields.map((field) => (
                     <li key={`${field.field}-${field.label}`}>
                       {field.label}
@@ -546,7 +554,7 @@ export function NfsesClient() {
                           <strong>{translatedByNfse[nfse.id]?.title}</strong>
                           <span>{translatedByNfse[nfse.id]?.message}</span>
                           {(translatedByNfse[nfse.id]?.fields ?? []).length > 0 ? (
-                            <ul style={{ margin: 0 }}>
+                            <ul style={{ paddingLeft: 16, margin: 0, listStylePosition: "inside" }}>
                               {(translatedByNfse[nfse.id]?.fields ?? []).map((field) => (
                                 <li key={`${nfse.id}-${field.field}`}>
                                   {field.label}
