@@ -4,7 +4,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { useSession } from "../../../src/lib/auth/useSession";
 import { formatCnpj, isValidCnpj, normalizeCnpj } from "../../../src/lib/br/cnpj";
 import type { Database } from "../../../src/lib/supabase/db.types";
 import { getSupabaseBrowser } from "../../../src/lib/supabase/browserClient";
@@ -26,7 +25,6 @@ function getFriendlyCompanyError(error: { code?: string; message: string; detail
 
 export function CompaniesClient() {
   const router = useRouter();
-  const { session } = useSession();
   const { tenantId, isLoading: isTenantLoading, error: tenantError } = useActiveTenant();
 
   const [companies, setCompanies] = useState<CompanyListRow[]>([]);
@@ -38,7 +36,6 @@ export function CompaniesClient() {
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
 
   const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
-  const [forceDeletingCompanyId, setForceDeletingCompanyId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
 
   const [legalName, setLegalName] = useState("");
@@ -164,59 +161,11 @@ export function CompaniesClient() {
       const errorMessage = error.message || "Erro desconhecido ao excluir company.";
       const lower = errorMessage.toLowerCase();
       if (lower.includes("violates foreign key constraint") && lower.includes("nfses_company_fk")) {
-        setDeleteError(
-          "Não dá para excluir esta empresa porque existem notas emitidas. Exclua as notas ou use 'Excluir junto com notas'."
-        );
+        setDeleteError("Não dá para excluir esta empresa porque existem notas emitidas. Exclua/cancele as notas primeiro.");
         return;
       }
 
       setDeleteError(`Falha ao excluir company: ${errorMessage}`);
-      return;
-    }
-
-    if (editingCompanyId === company.id) {
-      resetForm();
-    }
-
-    await loadCompanies();
-  }
-
-  async function handleForceDelete(company: CompanyListRow) {
-    if (!tenantId) {
-      setDeleteError("Tenant ativo não encontrado.");
-      return;
-    }
-    if (!session?.access_token) {
-      setDeleteError("Sessão inválida para excluir com notas.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `ATENÇÃO: isso excluirá a empresa "${company.legal_name}" e todas as NFS-e vinculadas. Deseja continuar?`
-    );
-    if (!confirmed) return;
-
-    setDeleteError("");
-    setForceDeletingCompanyId(company.id);
-
-    const response = await fetch("/api/companies/delete", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        tenantId,
-        companyId: company.id,
-        force: true,
-      }),
-    });
-
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    setForceDeletingCompanyId(null);
-
-    if (!response.ok) {
-      setDeleteError(payload?.error ?? "Falha ao excluir empresa com notas.");
       return;
     }
 
@@ -373,18 +322,10 @@ export function CompaniesClient() {
                     <button
                       type="button"
                       onClick={() => handleDelete(company)}
-                      disabled={Boolean(deletingCompanyId) || Boolean(forceDeletingCompanyId) || isSubmitting}
+                      disabled={Boolean(deletingCompanyId) || isSubmitting}
                       style={actionStyle}
                     >
                       {deletingCompanyId === company.id ? "Excluindo..." : "Excluir"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleForceDelete(company)}
-                      disabled={Boolean(deletingCompanyId) || Boolean(forceDeletingCompanyId) || isSubmitting}
-                      style={actionStyle}
-                    >
-                      {forceDeletingCompanyId === company.id ? "Excluindo + notas..." : "Excluir + notas"}
                     </button>
                   </td>
                 </tr>
