@@ -18,6 +18,7 @@ export function AuthGate({ children }: Readonly<{ children: React.ReactNode }>) 
   const navItems = [
     { href: "/app", label: "Dashboard" },
     { href: "/app/companies", label: "Empresas" },
+    { href: "/app/clients", label: "Clientes" },
   ];
 
   useEffect(() => {
