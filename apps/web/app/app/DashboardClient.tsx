@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../src/lib/auth/useSession";
+import { formatCnpj, isValidCnpj, normalizeCnpj } from "../../src/lib/br/cnpj";
 import type { Database } from "../../src/lib/supabase/db.types";
 import { getSupabaseBrowser } from "../../src/lib/supabase/browserClient";
 import { getActiveTenantId } from "../../src/lib/tenancy/activeTenant";
@@ -23,6 +24,13 @@ export function DashboardClient() {
   const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   const [legalName, setLegalName] = useState("");
   const [cnpj, setCnpj] = useState("");
+  const cnpjDigits = normalizeCnpj(cnpj);
+  const cnpjError =
+    cnpjDigits.length > 0 && cnpjDigits.length < 14
+      ? "CNPJ incompleto"
+      : cnpjDigits.length === 14 && !isValidCnpj(cnpjDigits)
+        ? "CNPJ inválido"
+        : "";
 
   useEffect(() => {
     if (!isLoading && !session) {
@@ -98,8 +106,13 @@ export function DashboardClient() {
       return;
     }
 
-    if (!legalName.trim() || !cnpj.trim()) {
+    if (!legalName.trim() || !cnpjDigits) {
       setCreateError("Preencha razão social e CNPJ.");
+      return;
+    }
+
+    if (cnpjError) {
+      setCreateError(cnpjError);
       return;
     }
 
@@ -108,7 +121,7 @@ export function DashboardClient() {
     const { error } = await supabase.from("companies").insert({
       tenant_id: activeTenantId,
       legal_name: legalName.trim(),
-      cnpj: cnpj.trim(),
+      cnpj: cnpjDigits,
     });
     setIsCreatingCompany(false);
 
@@ -166,14 +179,15 @@ export function DashboardClient() {
             CNPJ
             <input
               value={cnpj}
-              onChange={(event) => setCnpj(event.target.value)}
+              onChange={(event) => setCnpj(formatCnpj(event.target.value))}
               placeholder="00.000.000/0001-00"
             />
           </label>
+          {cnpjError ? <p style={{ color: "crimson", margin: 0 }}>{cnpjError}</p> : null}
 
           {createError ? <p style={{ color: "crimson" }}>{createError}</p> : null}
 
-          <button type="submit" disabled={isCreatingCompany}>
+          <button type="submit" disabled={isCreatingCompany || Boolean(cnpjError)}>
             {isCreatingCompany ? "Criando..." : "Criar company"}
           </button>
         </form>
@@ -188,7 +202,7 @@ export function DashboardClient() {
         <ul style={{ display: "grid", gap: 6 }}>
           {companies.map((company) => (
             <li key={company.id}>
-              {company.legal_name} - {company.cnpj}
+              {company.legal_name} - {formatCnpj(company.cnpj)}
             </li>
           ))}
         </ul>
