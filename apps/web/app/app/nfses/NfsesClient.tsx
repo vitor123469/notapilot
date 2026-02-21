@@ -1,9 +1,12 @@
 "use client";
 
 import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useSession } from "../../../src/lib/auth/useSession";
+import { translateIssueError } from "../../../src/lib/fiscal/errorTranslator";
+import type { Translation } from "../../../src/lib/fiscal/errorTranslator.types";
 import type { Database } from "../../../src/lib/supabase/db.types";
 import { getSupabaseBrowser } from "../../../src/lib/supabase/browserClient";
 import { useActiveTenant } from "../../../src/lib/tenancy/useActiveTenant";
@@ -11,7 +14,7 @@ import { useActiveTenant } from "../../../src/lib/tenancy/useActiveTenant";
 type CompanyRow = Pick<Database["public"]["Tables"]["companies"]["Row"], "id" | "legal_name" | "cnpj">;
 type NfseRow = Pick<
   Database["public"]["Tables"]["nfses"]["Row"],
-  "id" | "status" | "provider_nfse_number" | "service_value" | "created_at"
+  "id" | "status" | "provider_nfse_number" | "service_value" | "created_at" | "company_id" | "error_code" | "error_message"
 >;
 type NfseEventRow = Pick<
   Database["public"]["Tables"]["nfse_events"]["Row"],
@@ -71,10 +74,10 @@ export function NfsesClient() {
   const [serviceDescription, setServiceDescription] = useState("");
   const [serviceValueInput, setServiceValueInput] = useState("");
   const [isIssuing, setIsIssuing] = useState(false);
-  const [issueError, setIssueError] = useState("");
+  const [issueTranslation, setIssueTranslation] = useState<Translation | null>(null);
   const [issueResult, setIssueResult] = useState<IssueApiResponse | null>(null);
-  const [validationMissing, setValidationMissing] = useState<ValidationItem[]>([]);
-  const [validationWarnings, setValidationWarnings] = useState<ValidationItem[]>([]);
+  const [translatedByNfse, setTranslatedByNfse] = useState<Record<string, Translation | null>>({});
+  const [showTranslatedByNfse, setShowTranslatedByNfse] = useState<Record<string, boolean>>({});
 
   const parsedServiceValue = useMemo(() => Number(serviceValueInput), [serviceValueInput]);
 
@@ -119,7 +122,7 @@ export function NfsesClient() {
     const supabase = getSupabaseBrowser();
     const { data, error } = await supabase
       .from("nfses")
-      .select("id, status, provider_nfse_number, service_value, created_at")
+      .select("id, status, provider_nfse_number, service_value, created_at, company_id, error_code, error_message")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false });
 
@@ -181,25 +184,47 @@ export function NfsesClient() {
 
   async function handleIssue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIssueError("");
+    setIssueTranslation(null);
     setIssueResult(null);
-    setValidationMissing([]);
-    setValidationWarnings([]);
 
     if (!session?.access_token) {
-      setIssueError("Sessão inválida. Faça login novamente.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "UNKNOWN",
+          companyId,
+          errorMessage: "Sessão inválida. Faça login novamente.",
+        })
+      );
       return;
     }
     if (!tenantId) {
-      setIssueError("Tenant ativo não encontrado.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "UNKNOWN",
+          companyId,
+          errorMessage: "Tenant ativo não encontrado.",
+        })
+      );
       return;
     }
     if (!companyId) {
-      setIssueError("Selecione uma company.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "UNKNOWN",
+          errorMessage: "Selecione uma empresa para emitir.",
+        })
+      );
       return;
     }
     if (!Number.isFinite(parsedServiceValue)) {
-      setIssueError("Valor do serviço inválido.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "PROVIDER_REJECTED",
+          companyId,
+          errorCode: "E_VALUE",
+          errorMessage: "Valor do serviço inválido.",
+        })
+      );
       return;
     }
 
@@ -226,21 +251,29 @@ export function NfsesClient() {
       | null;
 
     if (dryRunResponse.status === 422 && dryRunPayload?.error === "VALIDATION_FAILED") {
-      setValidationMissing((dryRunPayload as ValidationFailedResponse).missing ?? []);
-      setValidationWarnings((dryRunPayload as ValidationFailedResponse).warnings ?? []);
-      setIssueError("A emissão foi bloqueada: faltam dados obrigatórios da empresa.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "VALIDATION_FAILED",
+          companyId,
+          missing: (dryRunPayload as ValidationFailedResponse).missing ?? [],
+          warnings: (dryRunPayload as ValidationFailedResponse).warnings ?? [],
+        })
+      );
       setIsIssuing(false);
       return;
     }
 
     if (!dryRunResponse.ok) {
-      setIssueError(getResponseMessage(dryRunPayload) ?? "Falha ao validar dados para emissão.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "UNKNOWN",
+          companyId,
+          errorMessage: getResponseMessage(dryRunPayload) ?? "Falha ao validar dados para emissão.",
+        })
+      );
       setIsIssuing(false);
       return;
     }
-
-    setValidationMissing(dryRunPayload?.missing ?? []);
-    setValidationWarnings(dryRunPayload?.warnings ?? []);
 
     const response = await fetch("/api/nfse/issue", {
       method: "POST",
@@ -265,16 +298,39 @@ export function NfsesClient() {
 
     if (!response.ok) {
       if (response.status === 422 && payload?.error === "VALIDATION_FAILED") {
-        setValidationMissing((payload as ValidationFailedResponse).missing ?? []);
-        setValidationWarnings((payload as ValidationFailedResponse).warnings ?? []);
-        setIssueError("A emissão foi bloqueada: faltam dados obrigatórios da empresa.");
+        setIssueTranslation(
+          translateIssueError({
+            type: "VALIDATION_FAILED",
+            companyId,
+            missing: (payload as ValidationFailedResponse).missing ?? [],
+            warnings: (payload as ValidationFailedResponse).warnings ?? [],
+          })
+        );
         return;
       }
-      setIssueError(getResponseMessage(payload) ?? "Falha ao emitir NFS-e.");
+      setIssueTranslation(
+        translateIssueError({
+          type: "UNKNOWN",
+          companyId,
+          errorMessage: getResponseMessage(payload) ?? "Falha ao emitir NFS-e.",
+        })
+      );
       return;
     }
 
     const issuePayload = payload as IssueApiResponse | null;
+    if (issuePayload?.status === "rejected") {
+      setIssueTranslation(
+        translateIssueError({
+          type: "PROVIDER_REJECTED",
+          companyId,
+          errorCode: issuePayload.errorCode,
+          errorMessage: issuePayload.errorMessage,
+        })
+      );
+    } else {
+      setIssueTranslation(null);
+    }
     setIssueResult({
       nfseId: issuePayload?.nfseId ?? "",
       status: issuePayload?.status ?? "submitted",
@@ -283,6 +339,33 @@ export function NfsesClient() {
       errorMessage: issuePayload?.errorMessage,
     });
     await loadNfses();
+  }
+
+  function handleTranslationAction(actionLabel: string) {
+    if (actionLabel === "Voltar") {
+      router.back();
+      return;
+    }
+    if (actionLabel === "Tentar novamente") {
+      setIssueTranslation(null);
+      return;
+    }
+  }
+
+  function handleExplainRejected(nfse: NfseRow) {
+    const isVisible = Boolean(showTranslatedByNfse[nfse.id]);
+    setShowTranslatedByNfse((prev) => ({ ...prev, [nfse.id]: !isVisible }));
+    if (isVisible || translatedByNfse[nfse.id]) {
+      return;
+    }
+
+    const translation = translateIssueError({
+      type: "PROVIDER_REJECTED",
+      companyId: nfse.company_id,
+      errorCode: nfse.error_code,
+      errorMessage: nfse.error_message,
+    });
+    setTranslatedByNfse((prev) => ({ ...prev, [nfse.id]: translation }));
   }
 
   async function toggleEvents(nfseId: string) {
@@ -355,34 +438,46 @@ export function NfsesClient() {
             />
           </label>
 
-          {issueError ? <p style={{ color: "crimson", margin: 0 }}>{issueError}</p> : null}
-
-          {validationMissing.length > 0 || validationWarnings.length > 0 ? (
-            <div style={{ display: "grid", gap: 8, border: "1px solid #f0d4d4", padding: 10, borderRadius: 8 }}>
-              <strong>Checklist antes de emitir</strong>
-              {validationMissing.length > 0 ? (
-                <div style={{ display: "grid", gap: 4 }}>
-                  <span style={{ color: "crimson" }}>Pendências obrigatórias:</span>
-                  <ul style={{ margin: 0 }}>
-                    {validationMissing.map((item) => (
-                      <li key={`missing-${item.field}`}>{item.label}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <span style={{ color: "green" }}>Dados obrigatórios validados com sucesso.</span>
-              )}
-
-              {validationWarnings.length > 0 ? (
-                <div style={{ display: "grid", gap: 4 }}>
-                  <span>Avisos recomendados:</span>
-                  <ul style={{ margin: 0 }}>
-                    {validationWarnings.map((item) => (
-                      <li key={`warning-${item.field}`}>{item.label}</li>
-                    ))}
-                  </ul>
-                </div>
+          {issueTranslation ? (
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                border: `1px solid ${issueTranslation.severity === "error" ? "#f0b3b3" : "#f0d4d4"}`,
+                padding: 10,
+                borderRadius: 8,
+                background: issueTranslation.severity === "info" ? "#f7fbff" : "#fff",
+              }}
+            >
+              <strong>{issueTranslation.title}</strong>
+              <span>{issueTranslation.message}</span>
+              {issueTranslation.fields && issueTranslation.fields.length > 0 ? (
+                <ul style={{ margin: 0 }}>
+                  {issueTranslation.fields.map((field) => (
+                    <li key={`${field.field}-${field.label}`}>
+                      {field.label}
+                      {field.suggestion ? ` - ${field.suggestion}` : ""}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {issueTranslation.actions.map((action) =>
+                  action.href ? (
+                    <Link
+                      key={`${action.label}-${action.href}`}
+                      href={action.href}
+                      style={{ border: "1px solid #999", borderRadius: 8, padding: "4px 10px", textDecoration: "none" }}
+                    >
+                      {action.label}
+                    </Link>
+                  ) : (
+                    <button key={action.label} type="button" onClick={() => handleTranslationAction(action.label)}>
+                      {action.label}
+                    </button>
+                  )
+                )}
+              </div>
             </div>
           ) : null}
 
@@ -421,7 +516,7 @@ export function NfsesClient() {
                 <th style={{ textAlign: "left" }}>Número</th>
                 <th style={{ textAlign: "left" }}>Valor</th>
                 <th style={{ textAlign: "left" }}>Criada em</th>
-                <th style={{ textAlign: "left" }}>Eventos</th>
+                <th style={{ textAlign: "left" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -433,12 +528,37 @@ export function NfsesClient() {
                     <td>{nfse.provider_nfse_number ?? "-"}</td>
                     <td>{nfse.service_value}</td>
                     <td>{new Date(nfse.created_at).toLocaleString()}</td>
-                    <td>
+                    <td style={{ display: "flex", gap: 8 }}>
                       <button type="button" onClick={() => toggleEvents(nfse.id)}>
                         {expandedByNfse[nfse.id] ? "Ocultar eventos" : "Ver eventos"}
                       </button>
+                      {nfse.status === "rejected" ? (
+                        <button type="button" onClick={() => handleExplainRejected(nfse)}>
+                          {showTranslatedByNfse[nfse.id] ? "Ocultar explicação" : "Entender erro"}
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
+                  {showTranslatedByNfse[nfse.id] && translatedByNfse[nfse.id] ? (
+                    <tr>
+                      <td colSpan={6}>
+                        <div style={{ display: "grid", gap: 6, border: "1px solid #f0d4d4", borderRadius: 8, padding: 10 }}>
+                          <strong>{translatedByNfse[nfse.id]?.title}</strong>
+                          <span>{translatedByNfse[nfse.id]?.message}</span>
+                          {(translatedByNfse[nfse.id]?.fields ?? []).length > 0 ? (
+                            <ul style={{ margin: 0 }}>
+                              {(translatedByNfse[nfse.id]?.fields ?? []).map((field) => (
+                                <li key={`${nfse.id}-${field.field}`}>
+                                  {field.label}
+                                  {field.suggestion ? ` - ${field.suggestion}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {expandedByNfse[nfse.id] ? (
                     <tr>
                       <td colSpan={6}>
