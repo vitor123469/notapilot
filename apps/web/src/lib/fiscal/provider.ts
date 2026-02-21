@@ -1,4 +1,4 @@
-import type { IssueDraft, ProviderCancelResult, ProviderConsultResult, ProviderIssueResult } from "./contracts";
+import type { IssueDraft, ProviderCancelResult, ProviderConsultResult, ProviderIssueResult, ProviderSubstituteResult } from "./contracts";
 
 export type ProviderIssueDraft = IssueDraft & {
   companyCnpj?: string;
@@ -14,11 +14,15 @@ export interface FiscalProvider {
   cancel(params: {
     tenantId: string;
     nfseId: string;
+    providerRequestId?: string;
+    providerNfseNumber?: string;
     reason?: string;
   }): Promise<ProviderCancelResult>;
   substitute(params: {
     tenantId: string;
     nfseId: string;
-    substituteReason?: string;
-  }): Promise<ProviderConsultResult>;
+    providerRequestId?: string;
+    oldNfseNumber?: string;
+    reason?: string;
+  }): Promise<ProviderSubstituteResult>;
 }

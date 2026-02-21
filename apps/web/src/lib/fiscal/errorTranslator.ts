@@ -23,6 +23,13 @@ type TranslateIssueErrorInput =
       type: "UNKNOWN";
       companyId?: string;
       errorMessage?: string | null;
+    }
+  | {
+      type: "ACTION_ERROR";
+      companyId?: string;
+      operation?: "cancel" | "substitute";
+      errorCode?: string | null;
+      errorMessage?: string | null;
     };
 
 function normalizeMessage(input: string | null | undefined): string {
@@ -137,6 +144,51 @@ export function translateIssueError(input: TranslateIssueErrorInput): Translatio
         actions: configActions(input.companyId),
       };
     }
+  }
+
+  if (input.type === "ACTION_ERROR") {
+    const operationLabel = input.operation === "substitute" ? "substituição" : "cancelamento";
+
+    if (input.errorCode === "E_NO_NUMBER") {
+      return {
+        title: "Número da NFS-e ausente",
+        message: `Não foi possível concluir o ${operationLabel} porque a nota não possui número no provider.`,
+        severity: "error",
+        actions: configActions(input.companyId),
+      };
+    }
+
+    if (input.errorCode === "E_REASON") {
+      return {
+        title: "Motivo obrigatório",
+        message: `Informe um motivo para seguir com o ${operationLabel}.`,
+        severity: "warning",
+        fields: [
+          {
+            field: "reason",
+            label: "Motivo",
+            suggestion: `Digite um motivo claro no formulário de ${operationLabel}.`,
+          },
+        ],
+        actions: [{ label: "Voltar ao formulário", kind: "button" }],
+      };
+    }
+
+    if (input.errorCode === "INVALID_STATUS") {
+      return {
+        title: "Status inválido para esta ação",
+        message: `Esta nota não está em status permitido para ${operationLabel}.`,
+        severity: "info",
+        actions: [{ label: "Tentar novamente", kind: "button" }],
+      };
+    }
+
+    return {
+      title: `Erro no ${operationLabel}`,
+      message: normalizeMessage(input.errorMessage),
+      severity: "error",
+      actions: [{ label: "Tentar novamente", kind: "button" }],
+    };
   }
 
   return {
