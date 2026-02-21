@@ -27,21 +27,6 @@ async function waitForSession(): Promise<Session | null> {
   return null;
 }
 
-function getRestHeaders(accessToken: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !anon) throw new Error("Supabase env missing");
-  return {
-    url,
-    headers: {
-      apikey: anon,
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-  };
-}
-
 export function OnboardingClient() {
   const router = useRouter();
   const { session, isLoading } = useSession();
@@ -65,63 +50,24 @@ export function OnboardingClient() {
       }
 
       const accessToken = validSession.access_token;
-      const userId = validSession.user.id;
-      const { url, headers } = getRestHeaders(accessToken);
-      setStatusMessage("Verificando membership...");
-
-      const memberCheckRes = await fetch(
-        `${url}/rest/v1/tenant_members?select=tenant_id&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
-        {
-          method: "GET",
-          headers,
-        }
-      );
-      if (!memberCheckRes.ok) {
-        const errorText = await memberCheckRes.text();
-        setErrorMessage(`HTTP ${memberCheckRes.status}: ${errorText}`);
+      setStatusMessage("Executando bootstrap...");
+      const bootstrapRes = await fetch("/api/onboarding/bootstrap", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (!bootstrapRes.ok) {
+        const errorText = await bootstrapRes.text();
+        setErrorMessage(`HTTP ${bootstrapRes.status}: ${errorText}`);
         return;
       }
-      const existingMembers = (await memberCheckRes.json()) as Array<{ tenant_id: string }>;
 
-      let tenantId = existingMembers[0]?.tenant_id ?? null;
-
+      const bootstrapData = (await bootstrapRes.json()) as { tenantId?: string };
+      const tenantId = bootstrapData.tenantId;
       if (!tenantId) {
-        setStatusMessage("Criando tenant e owner...");
-        const createTenantRes = await fetch(`${url}/rest/v1/tenants?select=id`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            name: "Minha empresa",
-            created_by: userId,
-          }),
-        });
-        if (!createTenantRes.ok) {
-          const errorText = await createTenantRes.text();
-          setErrorMessage(`HTTP ${createTenantRes.status}: ${errorText}`);
-          return;
-        }
-        const createdTenants = (await createTenantRes.json()) as Array<{ id: string }>;
-
-        tenantId = createdTenants[0]?.id ?? null;
-        if (!tenantId) {
-          setErrorMessage("HTTP 500: resposta sem tenant_id");
-          return;
-        }
-
-        const createMemberRes = await fetch(`${url}/rest/v1/tenant_members`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            tenant_id: tenantId,
-            user_id: userId,
-            role: "owner",
-          }),
-        });
-        if (!createMemberRes.ok) {
-          const errorText = await createMemberRes.text();
-          setErrorMessage(`HTTP ${createMemberRes.status}: ${errorText}`);
-          return;
-        }
+        setErrorMessage("HTTP 500: resposta sem tenantId");
+        return;
       }
 
       setActiveTenantId(tenantId);
