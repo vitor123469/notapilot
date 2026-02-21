@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { formatCnpj, isValidCnpj, normalizeCnpj } from "../../../src/lib/br/cnpj";
@@ -300,6 +301,7 @@ export function CompaniesClient() {
                     <button type="button" onClick={() => handleEdit(company)} disabled={isSubmitting}>
                       Editar
                     </button>
+                    <Link href={`/app/companies/${company.id}/settings`}>Config fiscal</Link>
                     <button
                       type="button"
                       onClick={() => handleDelete(company)}

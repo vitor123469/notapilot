@@ -140,6 +140,90 @@ export type Database = {
           },
         ]
       }
+      company_fiscal_settings: {
+        Row: {
+          address_city: string | null
+          address_complement: string | null
+          address_district: string | null
+          address_number: string | null
+          address_street: string | null
+          address_zip: string | null
+          cnae: string | null
+          company_id: string
+          created_at: string
+          default_service_description: string | null
+          id: string
+          iss_rate: number | null
+          municipality_ibge_code: string | null
+          municipality_name: string | null
+          service_code: string | null
+          service_list_item: string | null
+          state_uf: string | null
+          tax_regime: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address_city?: string | null
+          address_complement?: string | null
+          address_district?: string | null
+          address_number?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          cnae?: string | null
+          company_id: string
+          created_at?: string
+          default_service_description?: string | null
+          id?: string
+          iss_rate?: number | null
+          municipality_ibge_code?: string | null
+          municipality_name?: string | null
+          service_code?: string | null
+          service_list_item?: string | null
+          state_uf?: string | null
+          tax_regime?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address_city?: string | null
+          address_complement?: string | null
+          address_district?: string | null
+          address_number?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          cnae?: string | null
+          company_id?: string
+          created_at?: string
+          default_service_description?: string | null
+          id?: string
+          iss_rate?: number | null
+          municipality_ibge_code?: string | null
+          municipality_name?: string | null
+          service_code?: string | null
+          service_list_item?: string | null
+          state_uf?: string | null
+          tax_regime?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_fiscal_settings_company_fk"
+            columns: ["tenant_id", "company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["tenant_id", "id"]
+          },
+          {
+            foreignKeyName: "company_fiscal_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nfse_events: {
         Row: {
           created_at: string
@@ -407,6 +491,7 @@ export type Database = {
     }
     Functions: {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
+      is_tenant_creator: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
     }
     Enums: {
