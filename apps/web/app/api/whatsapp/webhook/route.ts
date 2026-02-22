@@ -74,6 +74,10 @@ function formatCurrency(value: number): string {
   return `R$ ${value.toFixed(2).replace(".", ",")}`;
 }
 
+function normalizeUsarToken(rawToken: string): string {
+  return rawToken.trim().toLowerCase().replace(/\s+/g, "").replace(/[^a-f0-9]/g, "").slice(0, 12);
+}
+
 async function handleEmitirCommand(input: {
   tenantId: string;
   companyId: string;
@@ -325,18 +329,27 @@ async function routeCommand(input: {
 
     return {
       replyText: withFooter([
-        ...companies.map((company) => `${company.id.slice(0, 8)} - ${company.legal_name}`),
-        "Use: USAR <idPrefix>",
+        ...companies.map((company) => `${company.id.slice(0, 6)} - ${company.legal_name}`),
+        "Use: USAR 8cae53",
       ]),
       companyIdForLog: defaultCompanyId,
     };
   }
 
-  if (upper.startsWith("USAR ")) {
-    const prefix = text.slice(5).trim().toLowerCase();
-    if (!prefix) {
+  if (upper.startsWith("USAR")) {
+    const rawToken = text.slice("USAR".length);
+    const norm = normalizeUsarToken(rawToken);
+
+    if (!norm) {
       return {
         replyText: withFooter(["Informe prefixo. Exemplo: USAR abc123"]),
+        companyIdForLog: defaultCompanyId,
+      };
+    }
+
+    if (norm.length < 4) {
+      return {
+        replyText: withFooter(["Use pelo menos 4 caracteres do codigo"]),
         companyIdForLog: defaultCompanyId,
       };
     }
@@ -354,9 +367,11 @@ async function routeCommand(input: {
       };
     }
 
-    const matches = (companies ?? []).filter((company) => company.id.toLowerCase().startsWith(prefix));
+    const loadedCompanies = companies ?? [];
+    const matches = loadedCompanies.filter((company) => company.id.toLowerCase().startsWith(norm));
 
     if (matches.length === 0) {
+      console.log(`[wa-usar] no-match norm=${norm} companies=${loadedCompanies.length}`);
       return {
         replyText: withFooter(["Nao achei. Envie EMPRESAS."]),
         companyIdForLog: defaultCompanyId,
@@ -364,8 +379,9 @@ async function routeCommand(input: {
     }
 
     if (matches.length > 1) {
+      console.log(`[wa-usar] ambiguous norm=${norm} companies=${loadedCompanies.length}`);
       return {
-        replyText: withFooter(["Prefixo ambiguo, envie mais caracteres."]),
+        replyText: withFooter(["Ambiguo, envie mais caracteres"]),
         companyIdForLog: defaultCompanyId,
       };
     }
