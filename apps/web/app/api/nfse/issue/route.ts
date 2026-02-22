@@ -142,7 +142,26 @@ export async function POST(request: Request) {
     return apiError(404, "COMPANY_NOT_FOUND", "Empresa não encontrada para o tenant.");
   }
 
-  const serviceDescription = readiness.snapshot.effectiveServiceDescription;
+  const descFromForm = (body.serviceDescription ?? "").trim();
+  const descDefault = (readiness.snapshot.settings?.defaultServiceDescription ?? "").trim();
+  const resolvedDesc = descFromForm || descDefault;
+  if (!resolvedDesc) {
+    return NextResponse.json(
+      {
+        error: "VALIDATION_FAILED",
+        missing: [
+          {
+            field: "serviceDescription",
+            label: "Descrição do serviço",
+            suggestion: "Preencha no formulário ou defina descrição padrão na Config fiscal",
+          },
+        ],
+        warnings: [],
+      },
+      { status: 422 }
+    );
+  }
+
   const normalizedServiceValue = readiness.snapshot.serviceValue;
   if (normalizedServiceValue === null) {
     return apiError(422, "VALIDATION_FAILED", "Valor do serviço inválido.");
@@ -174,7 +193,7 @@ export async function POST(request: Request) {
         idempotency_key: idempotencyKey,
         provider: "nfse_nacional",
         status: "submitted",
-        service_description: serviceDescription,
+        service_description: resolvedDesc,
         service_value: normalizedServiceValue,
         competence_date: competenceDate,
       },
@@ -234,7 +253,7 @@ export async function POST(request: Request) {
     companyId,
     clientId: clientId ?? undefined,
     idempotencyKey,
-    serviceDescription,
+    serviceDescription: resolvedDesc,
     serviceValue: normalizedServiceValue,
     competenceDate: competenceDate ?? undefined,
     companyCnpj: company.cnpj,
@@ -248,7 +267,7 @@ export async function POST(request: Request) {
         provider_request_id: providerResult.providerRequestId,
         provider_nfse_number: providerResult.providerNfseNumber ?? null,
         issued_at: new Date().toISOString(),
-        service_description: serviceDescription,
+        service_description: resolvedDesc,
         service_value: normalizedServiceValue,
         raw_request: providerResult.rawRequest ?? null,
         raw_response: providerResult.rawResponse ?? null,
@@ -306,7 +325,7 @@ export async function POST(request: Request) {
     .update({
       status: "rejected",
       provider_request_id: providerResult.providerRequestId,
-      service_description: serviceDescription,
+      service_description: resolvedDesc,
       service_value: normalizedServiceValue,
       raw_request: providerResult.rawRequest ?? null,
       raw_response: providerResult.rawResponse ?? null,
