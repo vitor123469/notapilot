@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -478,6 +478,48 @@ export type Database = {
           },
           {
             foreignKeyName: "whatsapp_messages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_sessions: {
+        Row: {
+          active_company_id: string | null
+          created_at: string
+          from_number: string
+          id: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active_company_id?: string | null
+          created_at?: string
+          from_number: string
+          id?: never
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active_company_id?: string | null
+          created_at?: string
+          from_number?: string
+          id?: never
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_sessions_company_fk"
+            columns: ["tenant_id", "active_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["tenant_id", "id"]
+          },
+          {
+            foreignKeyName: "whatsapp_sessions_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
