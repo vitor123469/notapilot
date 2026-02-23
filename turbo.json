@@ -1,7 +1,17 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalEnv": ["SUPABASE_SERVICE_ROLE_KEY", "TWILIO_DEFAULT_TENANT_ID", "TWILIO_DEFAULT_COMPANY_ID"],
+  "globalEnv": [
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "TWILIO_DEFAULT_TENANT_ID",
+    "TWILIO_DEFAULT_COMPANY_ID",
+    "META_WA_VERIFY_TOKEN",
+    "META_APP_SECRET",
+    "META_WA_ACCESS_TOKEN",
+    "META_DEFAULT_TENANT_ID",
+    "META_DEFAULT_COMPANY_ID",
+    "META_WA_PHONE_NUMBER_ID"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
