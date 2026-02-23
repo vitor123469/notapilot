@@ -485,6 +485,59 @@ export type Database = {
           },
         ]
       }
+      whatsapp_delivery_events: {
+        Row: {
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          error_title: string | null
+          id: number
+          message_id: string | null
+          provider: string
+          raw: Json
+          recipient_id: string | null
+          status: string
+          tenant_id: string
+          timestamp: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          error_title?: string | null
+          id?: never
+          message_id?: string | null
+          provider?: string
+          raw: Json
+          recipient_id?: string | null
+          status: string
+          tenant_id: string
+          timestamp?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          error_title?: string | null
+          id?: never
+          message_id?: string | null
+          provider?: string
+          raw?: Json
+          recipient_id?: string | null
+          status?: string
+          tenant_id?: string
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_delivery_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_sessions: {
         Row: {
           active_company_id: string | null
