@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import { sendWhatsApp } from "../../../../src/lib/twilio/sendWhatsApp";
 import { getSupabaseAdmin } from "../../../../src/lib/supabase/admin";
@@ -43,13 +43,30 @@ function buildMessageBody(job: WhatsAppJob): string {
     : `[${job.template_key}]`;
 }
 
-export async function POST(request: Request) {
+function authorize(request: NextRequest): NextResponse | null {
   const cronSecret = process.env.CRON_SECRET?.trim();
-  const providedSecret = request.headers.get("x-cron-secret")?.trim();
-
-  if (!cronSecret || !providedSecret || providedSecret !== cronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!cronSecret) {
+    return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
   }
+
+  // Primary: Vercel Cron sends "Authorization: Bearer <secret>"
+  const authHeader = request.headers.get("authorization")?.trim();
+  if (authHeader === `Bearer ${cronSecret}`) {
+    return null;
+  }
+
+  // Fallback: legacy x-cron-secret header (local testing)
+  const legacySecret = request.headers.get("x-cron-secret")?.trim();
+  if (legacySecret === cronSecret) {
+    return null;
+  }
+
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+async function handleDispatch(request: NextRequest): Promise<NextResponse> {
+  const authError = authorize(request);
+  if (authError) return authError;
 
   const admin = getSupabaseAdmin();
 
@@ -152,4 +169,12 @@ export async function POST(request: Request) {
     failed,
     retried,
   });
+}
+
+export async function GET(request: NextRequest) {
+  return handleDispatch(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleDispatch(request);
 }
