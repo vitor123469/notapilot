@@ -485,6 +485,68 @@ export type Database = {
           },
         ]
       }
+      whatsapp_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          payload: Json
+          run_at: string
+          status: string
+          template_key: string
+          tenant_id: string
+          to_phone: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          payload?: Json
+          run_at: string
+          status?: string
+          template_key: string
+          tenant_id: string
+          to_phone: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          payload?: Json
+          run_at?: string
+          status?: string
+          template_key?: string
+          tenant_id?: string
+          to_phone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_jobs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_delivery_events: {
         Row: {
           created_at: string
@@ -588,6 +650,26 @@ export type Database = {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_creator: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
+      pick_whatsapp_jobs: {
+        Args: { batch_size?: number; locker?: string }
+        Returns: {
+          attempts: number
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          payload: Json
+          run_at: string
+          status: string
+          template_key: string
+          tenant_id: string
+          to_phone: string
+          updated_at: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
