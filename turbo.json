@@ -18,7 +18,8 @@
     "VERCEL_ENV",
     "CRON_STALL_THRESHOLD_MINUTES",
     "ADMIN_ALERT_PHONE",
-    "ADMIN_MONITOR_TOKEN"
+    "ADMIN_MONITOR_TOKEN",
+    "ADMIN_CONFIG_TOKEN"
   ],
   "tasks": {
     "build": {
