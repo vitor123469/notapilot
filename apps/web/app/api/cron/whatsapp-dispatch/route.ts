@@ -221,22 +221,22 @@ async function recordRun(
   admin: ReturnType<typeof getSupabaseAdmin>,
   run: RunRecord
 ): Promise<void> {
-  try {
-    await admin.from("whatsapp_dispatch_runs").insert({
-      source: run.source,
-      picked: run.picked,
-      sent: run.sent,
-      failed: run.failed,
-      retried: run.retried,
-      schedules_picked: run.schedulesPicked,
-      jobs_created_from_schedules: run.jobsCreatedFromSchedules,
-      duration_ms: run.durationMs,
-      error: run.error ?? null,
-      meta: { env: process.env.VERCEL_ENV ?? "local" },
-    });
-  } catch (err) {
-    // Never let audit logging break the response
-    console.error("[cron/whatsapp-dispatch] recordRun failed:", err);
+  const row = {
+    source:                      run.source                    ?? "unknown",
+    picked:                      run.picked                    ?? 0,
+    sent:                        run.sent                      ?? 0,
+    failed:                      run.failed                    ?? 0,
+    retried:                     run.retried                   ?? 0,
+    schedules_picked:            run.schedulesPicked           ?? 0,
+    jobs_created_from_schedules: run.jobsCreatedFromSchedules  ?? 0,
+    duration_ms:                 run.durationMs                ?? null,
+    error:                       run.error                     ?? null,
+    meta:                        { env: process.env.VERCEL_ENV ?? "local" },
+  };
+
+  const { error } = await admin.from("whatsapp_dispatch_runs").insert(row);
+  if (error) {
+    console.error("[cron/whatsapp-dispatch] recordRun failed:", error);
   }
 }
 
