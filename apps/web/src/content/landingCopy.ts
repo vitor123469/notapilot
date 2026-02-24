@@ -1,11 +1,12 @@
 // Centralize aqui todo o copy da landing page.
 // Troque os textos livremente — os componentes lêem deste objeto.
+// Variação B (com Ajuste 1 no card #1 de "Por que" e Ajuste 2 no FAQ).
 
 export const copy = {
   meta: {
-    title: "NotaPilot — NFS-e pelo WhatsApp",
+    title: "NotaPilot — NFS-e sem portal, pelo WhatsApp",
     description:
-      "Emita, consulte e gerencie NFS-e pelo WhatsApp. Autopilot para escritórios contábeis multi-empresa.",
+      "Emissão e acompanhamento de NFS-e com menos fricção e mais evidências. WhatsApp + painel para contabilidade multi-empresa.",
   },
 
   nav: {
@@ -22,34 +23,49 @@ export const copy = {
   },
 
   hero: {
-    badge: "Beta aberto — vagas limitadas",
-    headline: "NFS-e pelo WhatsApp,\nsem abrir portal.",
+    badge: "Beta • Em expansão por cidade",
+    headline: "NFS-e sem portal: WhatsApp + painel para seu escritório",
     subheadline:
-      "Emita, consulte e gerencie notas fiscais de serviço para múltiplas empresas direto pelo WhatsApp. Autopilot monitora, alerta e resolve rejeições para você.",
-    ctaPrimary: { label: "Criar conta grátis", href: "/auth/signup" },
-    ctaSecondary: { label: "Já tenho conta", href: "/auth/login" },
-    disclaimer: "Sem cartão de crédito. Cancele quando quiser.",
+      "Emissão e acompanhamento com menos fricção e mais evidências. Perfeito para contabilidade multi-empresa que precisa de velocidade e controle.",
+    // bullets disponíveis para uso futuro no componente
+    bullets: [
+      "Fluxo único multi-empresa",
+      "Acompanhamento automático de status",
+      "Evidências para auditoria",
+    ],
+    ctaPrimary: {
+      label: "Criar conta",
+      href: "/auth/signup",
+      microcopy: "Acesso rápido ao beta e setup guiado.",
+    },
+    ctaSecondary: {
+      label: "Entrar",
+      href: "/auth/login",
+      microcopy: "Volte para o painel e continue.",
+    },
+    disclaimer: "Acesso rápido ao beta e setup guiado.",
   },
 
   why: {
     heading: "Por que escritórios trocam o portal pelo NotaPilot",
     cards: [
+      // Ajuste 1: card da Variação A
       {
         icon: "🏛️",
-        title: "Portal municipal é confuso e lento",
-        body: "Cada município tem uma interface diferente, sessões que expiram e fluxos que mudam sem aviso. Você perde tempo antes mesmo de emitir.",
+        title: "Portal municipal não escala",
+        body: "Um fluxo por cidade vira caos quando você tem muitas empresas.",
         promise: "NotaPilot abstrai o portal — você digita no WhatsApp, a nota sai.",
       },
       {
         icon: "🔁",
-        title: "Rejeição vira retrabalho",
-        body: "Código de erro críptico, nota não emitida, cliente esperando. O contador tenta de novo no portal, sem saber exatamente o que mudou.",
+        title: "Menos retrabalho repetitivo",
+        body: "Padronize o fluxo e reduza 'tentativa e erro'.",
         promise: "Error translator converte o erro em linguagem humana e sugere a correção.",
       },
       {
         icon: "📂",
-        title: "Falta rastreabilidade",
-        body: "E-mail perdido, planilha desatualizada, cliente perguntando se a nota saiu. Sem trilha, sem evidência.",
+        title: "Mais previsibilidade operacional",
+        body: "Status claro, alertas e trilha para resolver rápido.",
         promise: "Cada ação gera log imutável. Consulte status, histórico e PDF a qualquer momento.",
       },
     ],
@@ -61,18 +77,18 @@ export const copy = {
     steps: [
       {
         number: "01",
-        title: "Configure a empresa",
-        body: "Cadastre CNPJ, credenciais do município e tomadores recorrentes via painel ou WhatsApp. Feito uma vez.",
+        title: "Defina as empresas",
+        body: "Organize clientes e parâmetros básicos de emissão.",
       },
       {
         number: "02",
-        title: "Emita e consulte pelo WhatsApp",
-        body: "Envie os dados da nota em linguagem natural. O NotaPilot interpreta, valida e emite. Consulte status com um simples 'status [número]'.",
+        title: "Use o WhatsApp",
+        body: "Envie comandos e receba retorno sem abrir portais.",
       },
       {
         number: "03",
-        title: "Autopilot acompanha e alerta",
-        body: "Agendamentos recorrentes emitem automaticamente. Rejeições geram alerta instantâneo com explicação e ação sugerida.",
+        title: "Deixe o Autopilot vigiar",
+        body: "O sistema acompanha e registra mudanças de status.",
       },
     ],
   },
@@ -83,43 +99,43 @@ export const copy = {
     items: [
       {
         icon: "🏢",
-        title: "Multi-empresa",
-        body: "Gerencie N empresas no mesmo painel. Cada uma com suas credenciais, tomadores e histórico isolados.",
+        title: "Gestão multi-empresa",
+        body: "Operação por cliente com separação total.",
       },
       {
         icon: "💬",
-        title: "Comandos WhatsApp",
-        body: "Emita, consulte, cancele e substitua notas com comandos em linguagem natural. Sem app extra.",
+        title: "WhatsApp-first",
+        body: "Interface rápida para o dia a dia do time.",
       },
       {
         icon: "⏰",
-        title: "Autopilot recorrente",
-        body: "Configure emissões periódicas. O sistema executa, monitora e avisa quando algo precisa de atenção.",
+        title: "Rotinas automáticas",
+        body: "Checagens e lembretes sem depender de alguém.",
       },
       {
         icon: "🔍",
-        title: "Status e consulta",
-        body: "Saiba em tempo real se a nota foi aceita, rejeitada ou está em processamento. Por número ou por período.",
+        title: "Consulta centralizada",
+        body: "Busque notas e retornos em segundos.",
       },
       {
         icon: "↩️",
-        title: "Cancelamento e substituição",
-        body: "Cancele ou substitua notas com um comando. O histórico de substituições fica registrado.",
+        title: "Cancel/substitute",
+        body: "Ações registradas com evidência (quando suportado).",
       },
       {
         icon: "🗣️",
-        title: "Error translator",
-        body: "Mensagens de erro do portal traduzidas para linguagem humana, com causa e próximo passo sugerido.",
+        title: "Rejeições explicadas",
+        body: "Erro em 'português', com detalhe técnico guardado.",
       },
       {
         icon: "📋",
-        title: "Trilha de auditoria",
-        body: "Log imutável de toda ação: quem fez, quando, qual resultado. Evidência para auditorias e clientes.",
+        title: "Audit trail",
+        body: "Quem fez o quê, quando e com qual retorno.",
       },
       {
         icon: "🟢",
         title: "Monitor operacional",
-        body: "Healthcheck em tempo real do sistema. Saiba se tudo está funcionando antes de o cliente perguntar.",
+        body: "Saúde e indicadores para evitar surpresas.",
       },
     ],
   },
@@ -129,40 +145,36 @@ export const copy = {
     profiles: [
       {
         tag: "Escritório contábil",
-        title: "Multi-empresa, uma operação",
-        body: "Você cuida de dezenas de empresas e precisa de rastreabilidade, agilidade e evidência de que cada nota foi emitida corretamente. NotaPilot centraliza tudo: painel unificado, histórico por empresa, alertas automáticos.",
+        title: "Contabilidade multi-empresa",
+        body: "Menos abas, menos portais, mais controle e histórico. Ideal para times que operam alto volume com padrão.",
         cta: { label: "Começar agora", href: "/auth/signup" },
       },
       {
         tag: "Prestador de serviço",
-        title: "Emita sem sair do WhatsApp",
-        body: "Você presta serviços e quer emitir nota sem abrir portal. Configure uma vez e use o WhatsApp que já usa no dia a dia. Sem curva de aprendizado.",
+        title: "Prestador single company",
+        body: "Emita e acompanhe com simplicidade, sem perder rastreabilidade quando precisar provar algo.",
         cta: { label: "Criar conta", href: "/auth/signup" },
       },
     ],
   },
 
   trust: {
-    heading: "Segurança e evidências",
+    heading: "Segurança & Evidências",
     subheading:
-      "Operação confiável não é promessa — é design.",
+      "Operação confiável não é 'mágica': é registro, clareza e consistência. O NotaPilot mantém trilha completa, protege contra ações duplicadas e expõe um status simples do serviço para você confiar no fluxo.",
     items: [
       {
-        title: "Log imutável",
-        body: "Cada evento (emissão, cancelamento, erro, retry) é registrado com timestamp e não pode ser alterado retroativamente.",
+        title: "Trilha completa por tentativa",
+        body: "Cada evento — emissão, cancelamento, erro, retry — é registrado com timestamp e não pode ser alterado retroativamente.",
       },
       {
-        title: "Idempotência",
+        title: "Deduplicação de ações",
         body: "Reenvio do mesmo comando não gera nota duplicada. O sistema detecta a operação em andamento e retorna o resultado original.",
       },
       {
-        title: "Healthcheck público",
+        title: "Status público do serviço",
         body: "O endpoint /api/status expõe a saúde do sistema em tempo real. Transparência total sobre disponibilidade.",
         link: { label: "Ver status →", href: "/api/status" },
-      },
-      {
-        title: "Dados isolados por empresa",
-        body: "Row-level security no banco garante que os dados de cada empresa só são acessíveis pelas credenciais daquela empresa.",
       },
     ],
   },
@@ -171,37 +183,37 @@ export const copy = {
     heading: "Perguntas frequentes",
     items: [
       {
-        q: "Quais municípios são suportados?",
-        a: "Atualmente estamos em beta com suporte inicial a um conjunto de municípios. Não prometemos cobertura total — estamos expandindo de forma gradual e honesta. Consulte o painel ou fale conosco para verificar se o seu município já está disponível.",
+        q: "O NotaPilot funciona em qualquer município?",
+        a: "Ainda não. Estamos em beta e liberamos cobertura por município de forma gradual. Se você disser as cidades mais importantes, priorizamos no roadmap.",
       },
       {
-        q: "Preciso de certificado digital?",
-        a: "Depende do município. Alguns exigem certificado A1/A3, outros usam login e senha. O NotaPilot suporta ambos os modelos — configure conforme o que o seu município pede.",
+        q: "Vou precisar mudar meu processo?",
+        a: "Só o necessário: você troca o 'entra no portal' por comandos no WhatsApp + painel. Mantemos rastreabilidade para auditoria e rotina do escritório.",
       },
       {
-        q: "Como funciona para um escritório com vários clientes?",
-        a: "Cada empresa é uma entidade separada no sistema, com suas próprias credenciais e histórico. Você acessa tudo em um único painel e pode alternar entre empresas sem sair.",
+        q: "Precisa certificado digital para emitir?",
+        a: "Em alguns casos, sim. Os requisitos variam por cidade. O NotaPilot orienta e registra o que foi usado em cada operação.",
       },
       {
-        q: "O que acontece quando a nota é rejeitada?",
-        a: "O sistema registra o erro, traduz a mensagem para linguagem clara (error translator) e envia um alerta no WhatsApp com a causa provável e o próximo passo sugerido. Nada fica silencioso.",
+        q: "Como sei se a nota foi autorizada?",
+        a: "Você vê o status no painel e pode consultar pelo WhatsApp. O Autopilot também verifica e registra cada mudança.",
       },
       {
-        q: "Como cancelo ou substituo uma nota?",
-        a: "Via WhatsApp com um comando simples ('cancela [número]' ou 'substitui [número]') ou pelo painel. O histórico de cancelamento e substituição fica registrado.",
+        q: "Como vocês explicam rejeições?",
+        a: "Mostramos uma explicação curta e acionável, além do retorno original. Assim o time corrige com rapidez e sem 'adivinhar'.",
       },
+      // Ajuste 2: pergunta da Variação A
       {
         q: "Isso substitui meu contador?",
-        a: "Não. O NotaPilot automatiza a emissão e gestão de NFS-e — a parte operacional repetitiva. O julgamento tributário, o planejamento e o relacionamento com o cliente continuam sendo do contador.",
+        a: "Não. O NotaPilot é ferramenta operacional para emissão e acompanhamento. A responsabilidade contábil e fiscal continua com o contador e o processo da empresa.",
       },
     ],
   },
 
   ctaFinal: {
-    heading: "Comece hoje, sem compromisso.",
-    subheading:
-      "Configure sua primeira empresa em minutos e emita pelo WhatsApp ainda hoje.",
-    ctaPrimary: { label: "Criar conta grátis", href: "/auth/signup" },
+    heading: "Velocidade com evidências, para seu time operar",
+    subheading: "Acesse o beta e transforme NFS-e em um fluxo previsível.",
+    ctaPrimary: { label: "Começar agora", href: "/auth/signup" },
     ctaSecondary: { label: "Já tenho conta — Entrar", href: "/auth/login" },
     microcopy: "Beta aberto. Sem cartão de crédito.",
   },
@@ -229,7 +241,7 @@ export const copy = {
       {
         heading: "Sistema",
         links: [
-          { label: "Status do sistema", href: "/api/status" },
+          { label: "Status", href: "/api/status" },
           { label: "Contato", href: "mailto:contato@notapilot.com.br" },
         ],
       },
