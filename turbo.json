@@ -17,7 +17,8 @@
     "TWILIO_FROM",
     "VERCEL_ENV",
     "CRON_STALL_THRESHOLD_MINUTES",
-    "ADMIN_ALERT_PHONE"
+    "ADMIN_ALERT_PHONE",
+    "ADMIN_MONITOR_TOKEN"
   ],
   "tasks": {
     "build": {
