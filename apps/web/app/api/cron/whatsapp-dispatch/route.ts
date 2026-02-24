@@ -234,7 +234,8 @@ async function recordRun(
     meta:                        { env: process.env.VERCEL_ENV ?? "local" },
   };
 
-  const { error } = await admin.from("whatsapp_dispatch_runs").insert(row);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (admin as any).from("whatsapp_dispatch_runs").insert(row as any);
   if (error) {
     console.error("[cron/whatsapp-dispatch] recordRun failed:", error);
   }
