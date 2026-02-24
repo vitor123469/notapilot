@@ -29,6 +29,25 @@ type ProblematicJob = {
   last_error: string | null;
 };
 
+type FailedJob = {
+  id: string;
+  updated_at: string;
+  template_key: string;
+  to_phone: string;
+  last_error: string | null;
+};
+
+type RetryRaw = {
+  template_key: string;
+  attempts: number;
+};
+
+type TopRetry = {
+  template_key: string;
+  total_attempts: number;
+  count_jobs: number;
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function fmt(ts: string | null | undefined): string {
@@ -39,6 +58,20 @@ function fmt(ts: string | null | undefined): string {
 function fmtMs(ms: number | null | undefined): string {
   if (ms == null) return "—";
   return `${ms} ms`;
+}
+
+function aggregateRetries(rows: RetryRaw[]): TopRetry[] {
+  const map = new Map<string, { total_attempts: number; count_jobs: number }>();
+  for (const row of rows) {
+    const entry = map.get(row.template_key) ?? { total_attempts: 0, count_jobs: 0 };
+    entry.total_attempts += row.attempts;
+    entry.count_jobs += 1;
+    map.set(row.template_key, entry);
+  }
+  return Array.from(map.entries())
+    .map(([template_key, v]) => ({ template_key, ...v }))
+    .sort((a, b) => b.total_attempts - a.total_attempts)
+    .slice(0, 5);
 }
 
 const cellStyle: React.CSSProperties = {
@@ -76,7 +109,9 @@ export default async function MonitorPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = getSupabaseAdmin() as any;
 
-  const [runsResult, jobsResult] = await Promise.all([
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [runsResult, jobsResult, failedResult, retriesResult] = await Promise.all([
     admin
       .from("whatsapp_dispatch_runs")
       .select(
@@ -91,10 +126,28 @@ export default async function MonitorPage({
       .or("attempts.gt.0,status.eq.failed")
       .order("updated_at", { ascending: false })
       .limit(30),
+
+    // Falhas recentes
+    admin
+      .from("whatsapp_jobs")
+      .select("id, updated_at, template_key, to_phone, last_error")
+      .eq("status", "failed")
+      .order("updated_at", { ascending: false })
+      .limit(10),
+
+    // Raw data for retry aggregation (last 24h, attempts > 0)
+    admin
+      .from("whatsapp_jobs")
+      .select("template_key, attempts")
+      .gt("attempts", 0)
+      .gte("updated_at", since24h)
+      .limit(500),
   ]);
 
   const runs: DispatchRun[] = runsResult.data ?? [];
   const jobs: ProblematicJob[] = jobsResult.data ?? [];
+  const recentFailed: FailedJob[] = failedResult.data ?? [];
+  const topRetries: TopRetry[] = aggregateRetries((retriesResult.data ?? []) as RetryRaw[]);
 
   const lastCronRun = runs.find((r) => r.source === "vercel_cron") ?? null;
 
@@ -125,6 +178,84 @@ export default async function MonitorPage({
           <span style={{ color: lastCronRun?.error ? "crimson" : "#22c55e" }}>
             {lastCronRun?.error ?? "—"}
           </span>
+        </div>
+      </section>
+
+      {/* ── Alertas ─────────────────────────────────────────────────────── */}
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontSize: 16, margin: "0 0 12px" }}>Alertas</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+
+          {/* Falhas recentes */}
+          <div>
+            <h3 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "#374151" }}>
+              Falhas recentes{" "}
+              <span style={{ fontWeight: 400, color: "#6b7280" }}>({recentFailed.length})</span>
+            </h3>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {["updated_at", "template_key", "to_phone", "last_error"].map((h) => (
+                    <th key={h} style={{ ...headerStyle, fontSize: 12 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recentFailed.map((j) => (
+                  <tr key={j.id}>
+                    <td style={{ ...cellStyle, fontSize: 12 }}>{fmt(j.updated_at)}</td>
+                    <td style={{ ...cellStyle, fontSize: 12 }}>{j.template_key}</td>
+                    <td style={{ ...cellStyle, fontSize: 12 }}>{j.to_phone}</td>
+                    <td style={{ ...cellStyle, fontSize: 12, maxWidth: 200, whiteSpace: "normal", color: "#dc2626" }}>
+                      {j.last_error ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+                {recentFailed.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ ...cellStyle, fontSize: 12, color: "#22c55e", textAlign: "center" }}>
+                      Nenhuma falha recente
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Top retries 24h por template */}
+          <div>
+            <h3 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "#374151" }}>
+              Top retries (24h) por template
+            </h3>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {["template_key", "total_attempts", "count_jobs"].map((h) => (
+                    <th key={h} style={{ ...headerStyle, fontSize: 12 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {topRetries.map((r) => (
+                  <tr key={r.template_key}>
+                    <td style={{ ...cellStyle, fontSize: 12 }}>{r.template_key}</td>
+                    <td style={{ ...cellStyle, fontSize: 12, textAlign: "right", color: r.total_attempts > 10 ? "#dc2626" : "#d97706" }}>
+                      {r.total_attempts}
+                    </td>
+                    <td style={{ ...cellStyle, fontSize: 12, textAlign: "right" }}>{r.count_jobs}</td>
+                  </tr>
+                ))}
+                {topRetries.length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ ...cellStyle, fontSize: 12, color: "#22c55e", textAlign: "center" }}>
+                      Sem retries nas últimas 24h
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
         </div>
       </section>
 
