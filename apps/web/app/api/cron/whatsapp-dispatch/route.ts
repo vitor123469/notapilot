@@ -9,6 +9,10 @@ export const runtime = "nodejs";
 const BATCH_SIZE = 50;
 const LOCKER = "cron";
 
+const CRON_STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+// TODO: move to env var when needed
+const ADMIN_ALERT_PHONE = "whatsapp:+5521998182005";
+
 type DueSchedule = {
   id: string;
   tenant_id: string;
@@ -215,6 +219,7 @@ interface RunRecord {
   jobsCreatedFromSchedules: number;
   durationMs: number;
   error?: string;
+  cronStalled?: boolean;
 }
 
 async function recordRun(
@@ -231,13 +236,68 @@ async function recordRun(
     jobs_created_from_schedules: run.jobsCreatedFromSchedules  ?? 0,
     duration_ms:                 run.durationMs                ?? null,
     error:                       run.error                     ?? null,
-    meta:                        { env: process.env.VERCEL_ENV ?? "local" },
+    meta:                        { env: process.env.VERCEL_ENV ?? "local", cronStalled: run.cronStalled ?? false },
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin as any).from("whatsapp_dispatch_runs").insert(row as any);
   if (error) {
     console.error("[cron/whatsapp-dispatch] recordRun failed:", error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stall detection
+// ---------------------------------------------------------------------------
+
+async function checkAndAlertCronStall(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  now: Date
+): Promise<boolean> {
+  try {
+    const tenantId = process.env.TWILIO_DEFAULT_TENANT_ID?.trim();
+    if (!tenantId) return false;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (admin as any)
+      .from("whatsapp_dispatch_runs")
+      .select("ran_at")
+      .eq("source", "vercel_cron")
+      .order("ran_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) return false;
+
+    const gapMs = now.getTime() - new Date(data.ran_at as string).getTime();
+    if (gapMs <= CRON_STALL_THRESHOLD_MS) return false;
+
+    const gapMinutes = Math.round(gapMs / 60_000);
+
+    // Dedupe key bucketed to 10-minute windows to avoid repeated alerts
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const bucket = Math.floor(now.getUTCMinutes() / 10) * 10;
+    const dedupeKey = `cron_stalled:${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}${pad(now.getUTCHours())}${pad(bucket)}`;
+
+    const { error: alertError } = await admin.from("whatsapp_jobs").insert({
+      tenant_id: tenantId,
+      run_at: now.toISOString(),
+      to_phone: ADMIN_ALERT_PHONE,
+      template_key: "cron_stalled",
+      payload: { gap_minutes: gapMinutes } as Json,
+      dedupe_key: dedupeKey,
+    });
+
+    if (alertError && alertError.code !== "23505") {
+      console.error("[cron/whatsapp-dispatch] stall alert insert failed:", alertError.message);
+    } else if (!alertError) {
+      console.warn(`[cron/whatsapp-dispatch] CRON STALLED detected: gap=${gapMinutes}min, alert enqueued`);
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[cron/whatsapp-dispatch] checkAndAlertCronStall failed:", err);
+    return false;
   }
 }
 
@@ -256,8 +316,12 @@ async function handleDispatch(request: NextRequest): Promise<NextResponse> {
   let sent = 0;
   let failed = 0;
   let retried = 0;
+  let cronStalled = false;
 
   try {
+    // ── Step 0: stall detection ──────────────────────────────────────────────
+    cronStalled = await checkAndAlertCronStall(admin, now);
+
     // ── Step 1: spawn jobs from due schedules ────────────────────────────────
     const spawnResult = await spawnJobsFromSchedules(admin, now);
     schedulesPicked = spawnResult.schedulesPicked;
@@ -274,7 +338,7 @@ async function handleDispatch(request: NextRequest): Promise<NextResponse> {
 
     if (pickError) {
       console.error("[cron/whatsapp-dispatch] pick error:", pickError.message);
-      await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: pickError.message });
+      await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: pickError.message, cronStalled });
       return NextResponse.json({ error: "Failed to pick jobs", detail: pickError.message }, { status: 500 });
     }
 
@@ -379,14 +443,14 @@ async function handleDispatch(request: NextRequest): Promise<NextResponse> {
       `[cron/whatsapp-dispatch] done picked=${picked} sent=${sent} failed=${failed} retried=${retried}`
     );
 
-    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start });
+    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, cronStalled });
 
     return NextResponse.json({ picked, sent, failed, retried });
 
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "UNKNOWN_ERROR";
     console.error("[cron/whatsapp-dispatch] unhandled error:", errMsg);
-    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: errMsg });
+    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: errMsg, cronStalled });
     return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
