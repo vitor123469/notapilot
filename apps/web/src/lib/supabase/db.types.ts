@@ -485,6 +485,44 @@ export type Database = {
           },
         ]
       }
+      whatsapp_templates: {
+        Row: {
+          body: string
+          created_at: string
+          enabled: boolean
+          id: string
+          key: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          key: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          key?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_jobs: {
         Row: {
           attempts: number
@@ -650,6 +688,22 @@ export type Database = {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_creator: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
+      pick_due_whatsapp_schedules: {
+        Args: { batch_size?: number }
+        Returns: {
+          id: string
+          tenant_id: string
+          schedule_key: string
+          template_key: string
+          enabled: boolean
+          due_next_run_at: string
+          next_run_at: string
+          interval_seconds: number
+          payload: Json
+          created_at: string
+          updated_at: string
+        }[]
+      }
       pick_whatsapp_jobs: {
         Args: { batch_size?: number; locker?: string }
         Returns: {

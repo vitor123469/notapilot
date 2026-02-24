@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import type { Json } from "../../../../src/lib/supabase/db.types";
 import { sendWhatsApp } from "../../../../src/lib/twilio/sendWhatsApp";
 import { getSupabaseAdmin } from "../../../../src/lib/supabase/admin";
 
@@ -7,6 +8,20 @@ export const runtime = "nodejs";
 
 const BATCH_SIZE = 50;
 const LOCKER = "cron";
+
+type DueSchedule = {
+  id: string;
+  tenant_id: string;
+  schedule_key: string;
+  template_key: string;
+  enabled: boolean;
+  due_next_run_at: string;
+  next_run_at: string;
+  interval_seconds: number;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
 
 type WhatsAppJob = {
   id: string;
@@ -34,13 +49,60 @@ function addMinutes(date: Date, minutes: number): string {
   return new Date(date.getTime() + minutes * 60 * 1000).toISOString();
 }
 
-function buildMessageBody(job: WhatsAppJob): string {
-  const payloadLines = Object.entries(job.payload)
-    .map(([k, v]) => `${k}: ${String(v)}`)
-    .join(", ");
-  return payloadLines
-    ? `[${job.template_key}] ${payloadLines}`
-    : `[${job.template_key}]`;
+// ---------------------------------------------------------------------------
+// Template rendering
+// ---------------------------------------------------------------------------
+
+function resolveNestedValue(payload: Record<string, unknown>, path: string): string {
+  const parts = path.split(".");
+  let cursor: unknown = payload;
+  for (const part of parts) {
+    if (cursor === null || typeof cursor !== "object" || Array.isArray(cursor)) {
+      return "";
+    }
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  if (cursor === null || cursor === undefined) return "";
+  if (typeof cursor === "string" || typeof cursor === "number" || typeof cursor === "boolean") {
+    return String(cursor);
+  }
+  return "";
+}
+
+function renderTemplate(body: string, payload: Record<string, unknown>): string {
+  return body.replace(/\{\{([^}]+)\}\}/g, (_, key: string) =>
+    resolveNestedValue(payload, key.trim())
+  );
+}
+
+type TemplateRow = { body: string };
+
+async function resolveMessageBody(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  job: WhatsAppJob
+): Promise<string> {
+  // Compat path: job.payload.text overrides template lookup
+  const payloadText = job.payload.text;
+  if (typeof payloadText === "string" && payloadText.trim()) {
+    return payloadText.trim();
+  }
+
+  const { data: template, error } = await admin
+    .from("whatsapp_templates")
+    .select("body")
+    .eq("tenant_id", job.tenant_id)
+    .eq("key", job.template_key)
+    .eq("enabled", true)
+    .maybeSingle<TemplateRow>();
+
+  if (error) {
+    throw new Error(`TEMPLATE_LOOKUP_ERROR:${job.template_key}`);
+  }
+  if (!template) {
+    throw new Error(`TEMPLATE_NOT_FOUND:${job.template_key}`);
+  }
+
+  return renderTemplate(template.body, job.payload);
 }
 
 function authorize(request: NextRequest): NextResponse | null {
@@ -64,13 +126,86 @@ function authorize(request: NextRequest): NextResponse | null {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+async function spawnJobsFromSchedules(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  now: Date
+): Promise<number> {
+  const { data: schedules, error: scheduleError } = await admin.rpc(
+    "pick_due_whatsapp_schedules",
+    { batch_size: BATCH_SIZE }
+  );
+
+  if (scheduleError) {
+    console.error("[cron/whatsapp-dispatch] schedule pick error:", scheduleError.message);
+    return 0;
+  }
+
+  const dueSchedules = (schedules as DueSchedule[]) ?? [];
+  if (!dueSchedules.length) return 0;
+
+  console.log(`[cron/whatsapp-dispatch] spawning jobs for ${dueSchedules.length} due schedule(s)`);
+
+  let spawned = 0;
+  for (const schedule of dueSchedules) {
+    const rawPayload = schedule.payload;
+
+    // Resolve to_phone from payload.to_phone or payload.to
+    const toPhone =
+      typeof rawPayload.to_phone === "string" && rawPayload.to_phone.trim()
+        ? rawPayload.to_phone.trim()
+        : typeof rawPayload.to === "string" && rawPayload.to.trim()
+          ? (rawPayload.to as string).trim()
+          : null;
+
+    if (!toPhone) {
+      console.warn(
+        `[cron/whatsapp-dispatch] schedule ${schedule.id} (${schedule.schedule_key}) skipped: no to_phone in payload`
+      );
+      continue;
+    }
+
+    const dedupeKey = `schedule:${schedule.id}:${schedule.due_next_run_at}`;
+
+    const { error: insertError } = await admin.from("whatsapp_jobs").insert({
+      tenant_id: schedule.tenant_id,
+      run_at: now.toISOString(),
+      template_key: schedule.template_key,
+      payload: rawPayload as Json,
+      to_phone: toPhone,
+      dedupe_key: dedupeKey,
+    });
+
+    if (insertError) {
+      // Unique-key violation means job already exists for this schedule tick — safe to ignore
+      if (insertError.code === "23505") {
+        console.log(`[cron/whatsapp-dispatch] dedupe skip schedule=${schedule.id} key=${dedupeKey}`);
+      } else {
+        console.error(
+          `[cron/whatsapp-dispatch] failed to spawn job for schedule=${schedule.id}: ${insertError.message}`
+        );
+      }
+    } else {
+      spawned++;
+    }
+  }
+
+  return spawned;
+}
+
 async function handleDispatch(request: NextRequest): Promise<NextResponse> {
   const authError = authorize(request);
   if (authError) return authError;
 
   const admin = getSupabaseAdmin();
+  const now = new Date();
 
-  // Atomically pick and lock pending jobs via FOR UPDATE SKIP LOCKED
+  // ── Step 1: spawn jobs from due schedules ──────────────────────────────────
+  const spawned = await spawnJobsFromSchedules(admin, now);
+  if (spawned > 0) {
+    console.log(`[cron/whatsapp-dispatch] spawned ${spawned} job(s) from schedules`);
+  }
+
+  // ── Step 2: atomically pick and lock pending jobs via FOR UPDATE SKIP LOCKED
   const { data: jobs, error: pickError } = await admin.rpc("pick_whatsapp_jobs", {
     batch_size: BATCH_SIZE,
     locker: LOCKER,
@@ -87,10 +222,32 @@ async function handleDispatch(request: NextRequest): Promise<NextResponse> {
   let sent = 0;
   let failed = 0;
   let retried = 0;
-  const now = new Date();
 
   for (const job of pickedJobs) {
-    const messageBody = buildMessageBody(job);
+    // Resolve message body (template lookup or payload.text compat)
+    let messageBody: string;
+    try {
+      messageBody = await resolveMessageBody(admin, job);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "TEMPLATE_RESOLVE_ERROR";
+      console.warn(`[cron/whatsapp-dispatch] template error job=${job.id} err=${errMsg}`);
+      const newAttempts = job.attempts + 1;
+      const exhausted = newAttempts >= job.max_attempts;
+      if (exhausted) {
+        await admin
+          .from("whatsapp_jobs")
+          .update({ status: "failed", attempts: newAttempts, last_error: errMsg, locked_by: null, updated_at: now.toISOString() })
+          .eq("id", job.id);
+        failed++;
+      } else {
+        await admin
+          .from("whatsapp_jobs")
+          .update({ status: "pending", attempts: newAttempts, last_error: errMsg, run_at: addMinutes(now, backoffMinutes(newAttempts)), locked_at: null, locked_by: null, updated_at: now.toISOString() })
+          .eq("id", job.id);
+        retried++;
+      }
+      continue;
+    }
 
     const result = await sendWhatsApp({ to: job.to_phone, body: messageBody });
 
