@@ -126,10 +126,12 @@ function authorize(request: NextRequest): NextResponse | null {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+type SpawnResult = { schedulesPicked: number; jobsCreated: number };
+
 async function spawnJobsFromSchedules(
   admin: ReturnType<typeof getSupabaseAdmin>,
   now: Date
-): Promise<number> {
+): Promise<SpawnResult> {
   const { data: schedules, error: scheduleError } = await admin.rpc(
     "pick_due_whatsapp_schedules",
     { batch_size: BATCH_SIZE }
@@ -137,15 +139,15 @@ async function spawnJobsFromSchedules(
 
   if (scheduleError) {
     console.error("[cron/whatsapp-dispatch] schedule pick error:", scheduleError.message);
-    return 0;
+    return { schedulesPicked: 0, jobsCreated: 0 };
   }
 
   const dueSchedules = (schedules as DueSchedule[]) ?? [];
-  if (!dueSchedules.length) return 0;
+  if (!dueSchedules.length) return { schedulesPicked: 0, jobsCreated: 0 };
 
   console.log(`[cron/whatsapp-dispatch] spawning jobs for ${dueSchedules.length} due schedule(s)`);
 
-  let spawned = 0;
+  let jobsCreated = 0;
   for (const schedule of dueSchedules) {
     const rawPayload = schedule.payload;
 
@@ -185,147 +187,207 @@ async function spawnJobsFromSchedules(
         );
       }
     } else {
-      spawned++;
+      jobsCreated++;
     }
   }
 
-  return spawned;
+  return { schedulesPicked: dueSchedules.length, jobsCreated };
+}
+
+// ---------------------------------------------------------------------------
+// Source detection & run recording
+// ---------------------------------------------------------------------------
+
+function detectSource(request: NextRequest): string {
+  if (request.headers.has("x-vercel-cron")) return "vercel_cron";
+  const ua = request.headers.get("user-agent") ?? "";
+  if (/vercel/i.test(ua)) return "vercel_cron";
+  return "manual";
+}
+
+interface RunRecord {
+  source: string;
+  picked: number;
+  sent: number;
+  failed: number;
+  retried: number;
+  schedulesPicked: number;
+  jobsCreatedFromSchedules: number;
+  durationMs: number;
+  error?: string;
+}
+
+async function recordRun(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  run: RunRecord
+): Promise<void> {
+  try {
+    await admin.from("whatsapp_dispatch_runs").insert({
+      source: run.source,
+      picked: run.picked,
+      sent: run.sent,
+      failed: run.failed,
+      retried: run.retried,
+      schedules_picked: run.schedulesPicked,
+      jobs_created_from_schedules: run.jobsCreatedFromSchedules,
+      duration_ms: run.durationMs,
+      error: run.error ?? null,
+      meta: { env: process.env.VERCEL_ENV ?? "local" },
+    });
+  } catch (err) {
+    // Never let audit logging break the response
+    console.error("[cron/whatsapp-dispatch] recordRun failed:", err);
+  }
 }
 
 async function handleDispatch(request: NextRequest): Promise<NextResponse> {
   const authError = authorize(request);
   if (authError) return authError;
 
+  const start = Date.now();
+  const source = detectSource(request);
   const admin = getSupabaseAdmin();
   const now = new Date();
 
-  // ── Step 1: spawn jobs from due schedules ──────────────────────────────────
-  const spawned = await spawnJobsFromSchedules(admin, now);
-  if (spawned > 0) {
-    console.log(`[cron/whatsapp-dispatch] spawned ${spawned} job(s) from schedules`);
-  }
-
-  // ── Step 2: atomically pick and lock pending jobs via FOR UPDATE SKIP LOCKED
-  const { data: jobs, error: pickError } = await admin.rpc("pick_whatsapp_jobs", {
-    batch_size: BATCH_SIZE,
-    locker: LOCKER,
-  });
-
-  if (pickError) {
-    console.error("[cron/whatsapp-dispatch] pick error:", pickError.message);
-    return NextResponse.json({ error: "Failed to pick jobs", detail: pickError.message }, { status: 500 });
-  }
-
-  const pickedJobs = (jobs as WhatsAppJob[]) ?? [];
-  console.log(`[cron/whatsapp-dispatch] picked ${pickedJobs.length} jobs`);
-
+  let schedulesPicked = 0;
+  let jobsCreatedFromSchedules = 0;
+  let picked = 0;
   let sent = 0;
   let failed = 0;
   let retried = 0;
 
-  for (const job of pickedJobs) {
-    // Resolve message body (template lookup or payload.text compat)
-    let messageBody: string;
-    try {
-      messageBody = await resolveMessageBody(admin, job);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "TEMPLATE_RESOLVE_ERROR";
-      console.warn(`[cron/whatsapp-dispatch] template error job=${job.id} err=${errMsg}`);
-      const newAttempts = job.attempts + 1;
-      const exhausted = newAttempts >= job.max_attempts;
-      if (exhausted) {
-        await admin
-          .from("whatsapp_jobs")
-          .update({ status: "failed", attempts: newAttempts, last_error: errMsg, locked_by: null, updated_at: now.toISOString() })
-          .eq("id", job.id);
-        failed++;
-      } else {
-        await admin
-          .from("whatsapp_jobs")
-          .update({ status: "pending", attempts: newAttempts, last_error: errMsg, run_at: addMinutes(now, backoffMinutes(newAttempts)), locked_at: null, locked_by: null, updated_at: now.toISOString() })
-          .eq("id", job.id);
-        retried++;
-      }
-      continue;
+  try {
+    // ── Step 1: spawn jobs from due schedules ────────────────────────────────
+    const spawnResult = await spawnJobsFromSchedules(admin, now);
+    schedulesPicked = spawnResult.schedulesPicked;
+    jobsCreatedFromSchedules = spawnResult.jobsCreated;
+    if (jobsCreatedFromSchedules > 0) {
+      console.log(`[cron/whatsapp-dispatch] spawned ${jobsCreatedFromSchedules} job(s) from ${schedulesPicked} schedule(s)`);
     }
 
-    const result = await sendWhatsApp({ to: job.to_phone, body: messageBody });
+    // ── Step 2: atomically pick and lock pending jobs via FOR UPDATE SKIP LOCKED
+    const { data: jobs, error: pickError } = await admin.rpc("pick_whatsapp_jobs", {
+      batch_size: BATCH_SIZE,
+      locker: LOCKER,
+    });
 
-    if (result.ok) {
-      // ── success path ─────────────────────────────────────────────────────
-      console.log(`[cron/whatsapp-dispatch] sent job=${job.id} sid=${result.sid}`);
+    if (pickError) {
+      console.error("[cron/whatsapp-dispatch] pick error:", pickError.message);
+      await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: pickError.message });
+      return NextResponse.json({ error: "Failed to pick jobs", detail: pickError.message }, { status: 500 });
+    }
 
-      await admin
-        .from("whatsapp_jobs")
-        .update({ status: "sent", locked_by: null, updated_at: now.toISOString() })
-        .eq("id", job.id);
+    const pickedJobs = (jobs as WhatsAppJob[]) ?? [];
+    picked = pickedJobs.length;
+    console.log(`[cron/whatsapp-dispatch] picked ${picked} jobs`);
 
-      // Log to whatsapp_messages outbound
-      await admin.from("whatsapp_messages").insert({
-        tenant_id: job.tenant_id,
-        direction: "outbound",
-        from_number: process.env.TWILIO_FROM ?? null,
-        to_number: job.to_phone,
-        body: messageBody,
-        raw: {
-          source: "cron_dispatch",
-          job_id: job.id,
-          template_key: job.template_key,
-          sid: result.sid,
-        },
-      });
+    for (const job of pickedJobs) {
+      // Resolve message body (template lookup or payload.text compat)
+      let messageBody: string;
+      try {
+        messageBody = await resolveMessageBody(admin, job);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "TEMPLATE_RESOLVE_ERROR";
+        console.warn(`[cron/whatsapp-dispatch] template error job=${job.id} err=${errMsg}`);
+        const newAttempts = job.attempts + 1;
+        const exhausted = newAttempts >= job.max_attempts;
+        if (exhausted) {
+          await admin
+            .from("whatsapp_jobs")
+            .update({ status: "failed", attempts: newAttempts, last_error: errMsg, locked_by: null, updated_at: now.toISOString() })
+            .eq("id", job.id);
+          failed++;
+        } else {
+          await admin
+            .from("whatsapp_jobs")
+            .update({ status: "pending", attempts: newAttempts, last_error: errMsg, run_at: addMinutes(now, backoffMinutes(newAttempts)), locked_at: null, locked_by: null, updated_at: now.toISOString() })
+            .eq("id", job.id);
+          retried++;
+        }
+        continue;
+      }
 
-      sent++;
-    } else {
-      // ── error path ────────────────────────────────────────────────────────
-      const newAttempts = job.attempts + 1;
-      const exhausted = newAttempts >= job.max_attempts;
+      const result = await sendWhatsApp({ to: job.to_phone, body: messageBody });
 
-      console.warn(
-        `[cron/whatsapp-dispatch] error job=${job.id} attempt=${newAttempts}/${job.max_attempts} err=${result.error}`
-      );
+      if (result.ok) {
+        // ── success path ───────────────────────────────────────────────────
+        console.log(`[cron/whatsapp-dispatch] sent job=${job.id} sid=${result.sid}`);
 
-      if (exhausted) {
         await admin
           .from("whatsapp_jobs")
-          .update({
-            status: "failed",
-            attempts: newAttempts,
-            last_error: result.error,
-            locked_by: null,
-            updated_at: now.toISOString(),
-          })
+          .update({ status: "sent", locked_by: null, updated_at: now.toISOString() })
           .eq("id", job.id);
-        failed++;
+
+        // Log to whatsapp_messages outbound
+        await admin.from("whatsapp_messages").insert({
+          tenant_id: job.tenant_id,
+          direction: "outbound",
+          from_number: process.env.TWILIO_FROM ?? null,
+          to_number: job.to_phone,
+          body: messageBody,
+          raw: {
+            source: "cron_dispatch",
+            job_id: job.id,
+            template_key: job.template_key,
+            sid: result.sid,
+          },
+        });
+
+        sent++;
       } else {
-        const runAt = addMinutes(now, backoffMinutes(newAttempts));
-        await admin
-          .from("whatsapp_jobs")
-          .update({
-            status: "pending",
-            attempts: newAttempts,
-            last_error: result.error,
-            run_at: runAt,
-            locked_at: null,
-            locked_by: null,
-            updated_at: now.toISOString(),
-          })
-          .eq("id", job.id);
-        retried++;
+        // ── error path ─────────────────────────────────────────────────────
+        const newAttempts = job.attempts + 1;
+        const exhausted = newAttempts >= job.max_attempts;
+
+        console.warn(
+          `[cron/whatsapp-dispatch] error job=${job.id} attempt=${newAttempts}/${job.max_attempts} err=${result.error}`
+        );
+
+        if (exhausted) {
+          await admin
+            .from("whatsapp_jobs")
+            .update({
+              status: "failed",
+              attempts: newAttempts,
+              last_error: result.error,
+              locked_by: null,
+              updated_at: now.toISOString(),
+            })
+            .eq("id", job.id);
+          failed++;
+        } else {
+          const runAt = addMinutes(now, backoffMinutes(newAttempts));
+          await admin
+            .from("whatsapp_jobs")
+            .update({
+              status: "pending",
+              attempts: newAttempts,
+              last_error: result.error,
+              run_at: runAt,
+              locked_at: null,
+              locked_by: null,
+              updated_at: now.toISOString(),
+            })
+            .eq("id", job.id);
+          retried++;
+        }
       }
     }
+
+    console.log(
+      `[cron/whatsapp-dispatch] done picked=${picked} sent=${sent} failed=${failed} retried=${retried}`
+    );
+
+    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start });
+
+    return NextResponse.json({ picked, sent, failed, retried });
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "UNKNOWN_ERROR";
+    console.error("[cron/whatsapp-dispatch] unhandled error:", errMsg);
+    await recordRun(admin, { source, picked, sent, failed, retried, schedulesPicked, jobsCreatedFromSchedules, durationMs: Date.now() - start, error: errMsg });
+    return NextResponse.json({ error: errMsg }, { status: 500 });
   }
-
-  console.log(
-    `[cron/whatsapp-dispatch] done picked=${pickedJobs.length} sent=${sent} failed=${failed} retried=${retried}`
-  );
-
-  return NextResponse.json({
-    picked: pickedJobs.length,
-    sent,
-    failed,
-    retried,
-  });
 }
 
 export async function GET(request: NextRequest) {
