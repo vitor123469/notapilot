@@ -9,9 +9,9 @@ export const runtime = "nodejs";
 const BATCH_SIZE = 50;
 const LOCKER = "cron";
 
-const CRON_STALL_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
-// TODO: move to env var when needed
-const ADMIN_ALERT_PHONE = "whatsapp:+5521998182005";
+const thresholdMin = Number(process.env.CRON_STALL_THRESHOLD_MINUTES ?? "10");
+const CRON_STALL_THRESHOLD_MS = thresholdMin * 60_000;
+const ADMIN_ALERT_PHONE = process.env.ADMIN_ALERT_PHONE ?? "whatsapp:+5521998182005";
 
 type DueSchedule = {
   id: string;
