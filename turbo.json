@@ -15,7 +15,10 @@
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM",
-    "VERCEL_ENV"
+    "VERCEL_ENV",
+    "CRON_STALL_THRESHOLD_MINUTES",
+    "ADMIN_ALERT_PHONE",
+    "ADMIN_MONITOR_TOKEN"
   ],
   "tasks": {
     "build": {
